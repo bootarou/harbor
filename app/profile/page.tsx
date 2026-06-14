@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProfileForm } from "@/components/profile-form";
+import { SmdSync } from "@/components/auth/smd-sync";
 
 export const metadata = {
   title: "プロフィール編集",
@@ -18,11 +19,15 @@ export default async function ProfilePage() {
     where: { id: session.user.id },
     select: {
       email: true,
+      emailNotificationsEnabled: true,
       displayName: true,
       bio: true,
       xAccount: true,
       avatarUrl: true,
-      xymAddress: true,
+      websiteUrl: true,
+      symbolAddress: true,
+      symbolNamespace: true,
+      did: true,
       tokushoho: true,
       salesTerms: true,
     },
@@ -41,9 +46,17 @@ export default async function ProfilePage() {
         </Link>
       </div>
 
-      <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-        メールアドレス: {user.email}
-      </p>
+      <section className="mb-6 rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-800">
+        <p className="text-xs text-gray-500 dark:text-gray-400">Symbol DID</p>
+        <p className="mt-1 break-all font-mono text-xs">
+          {user.did ?? user.symbolAddress ?? "未設定"}
+        </p>
+        {user.symbolNamespace && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Namespace: <span className="font-mono">{user.symbolNamespace}</span>
+          </p>
+        )}
+      </section>
 
       <ProfileForm
         initial={{
@@ -51,20 +64,20 @@ export default async function ProfilePage() {
           bio: user.bio ?? "",
           xAccount: user.xAccount ?? "",
           avatarUrl: user.avatarUrl ?? "",
+          email: user.email ?? "",
+          emailNotificationsEnabled: user.emailNotificationsEnabled,
+          websiteUrl: user.websiteUrl ?? "",
           tokushoho: user.tokushoho ?? "",
           salesTerms: user.salesTerms ?? "",
         }}
       />
 
       <section className="mt-10 border-t border-gray-200 pt-6 dark:border-gray-800">
-        <h2 className="text-sm font-semibold">XYM アドレス（公開）</h2>
-        {user.xymAddress ? (
-          <p className="mt-2 break-all font-mono text-sm">{user.xymAddress}</p>
-        ) : (
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            未設定です。Phase 5 のウォレット生成時に自動的に設定されます。
-          </p>
-        )}
+        <h2 className="mb-2 text-sm font-semibold">SMDプロフィール同期</h2>
+        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          Symbol チェーン上の social_meta_data から表示名・画像などを取り込みます（確認後に適用）。
+        </p>
+        <SmdSync address={user.symbolAddress} />
       </section>
     </main>
   );

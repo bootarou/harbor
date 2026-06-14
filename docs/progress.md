@@ -4,6 +4,43 @@
 
 ---
 
+## 認証刷新: Symbol DID（チャレンジ署名）＋SMD連携 ✅ 実装完了（人間レビュー必須）(2026-06-14)
+
+**※ メール/パスワード認証を廃止し、Symbol アドレス(DID)主体のチャレンジ署名認証へ全面移行（ユーザー決定）。既存のメール/パスワードアカウントはログイン不可（DIDで作り直し）。秘密鍵はサーバー非送信・ローカル署名。**
+
+### データモデル
+- `User`: `symbolAddress @unique`(DID識別子) / `did` / `network` / `publicKey` / `lastLoginAt` を追加。`email`/`passwordHash` を任意化（emailはログインIDではない）。`emailVerified` / `emailNotificationsEnabled` / `websiteUrl` / `symbolNamespace` / `profileSource` / `smdSyncedAt` 追加
+- `Challenge`（ワンタイム: address/network/nonce/message/used/expiresAt）、`AuthLog`（監査）追加
+
+### 認証フロー
+- `POST /api/auth/challenge`: アドレス検証→ワンタイム nonce＋メッセージ（サービス名/用途/network/address/nonce/発行・有効期限）を生成・保存
+- `lib/auth.ts`（Auth.js v5, provider id `did`）: `{challengeId,address,publicKey,signature}` を検証
+  - チャレンジ存在/未使用/期限内/アドレス一致/network一致、公開鍵→アドレス導出一致、署名検証（保存messageを使用・クライアント申告のmessageは不使用）、nonce使用済み化、ユーザー upsert、`lastLoginAt`更新、監査ログ
+- 署名: `lib/wallet/symbol.ts signChallenge`（クライアント）／検証: `lib/did/verify.ts`（サーバー）。署名検証は Node で実証済み
+- UI: `components/auth/did-login.tsx`（端末ウォレットでログイン）／`components/auth/register-flow.tsx`（新規アドレス作成 or 秘密鍵インポート＋**バックアップ確認チェック必須**＋自動ログイン）。旧 email/password UI・`/api/register` は削除
+
+### SMD（social_meta_data）
+- `lib/smd.ts`: メタデータキーを UInt64 変換し REST 取得→本人発行(source==target==address)のみ採用→JSON検証（name/imageUrl/url/namespace、https のみ・svg/data:/js: 拒否・画像拡張子チェック・テキストはエスケープ表示）
+- `GET /api/smd`（候補プレビュー）／`POST /api/smd/apply`（要ログイン・本人アドレスでサーバー再取得→項目別適用）
+- インポート時に候補を確認して項目選択適用。プロフィール編集に「SMDメタデータから同期」(`components/auth/smd-sync.tsx`)。SMDなし/不正でも登録継続
+
+### メール
+- ログインIDから除外。プロフィール任意項目（通知・連絡用）。メール未登録でも全機能利用可。`emailNotificationsEnabled` 追加
+
+### 動作確認（実DB + Node署名 + 実testnetノード）
+- DID ログイン: challenge→署名→callback 302→セッション発行(7日)、初回はユーザー＋DID自動作成 ✓
+- セキュリティ: nonce再利用不可・署名不正拒否・network不一致(N…)は400・再ログインで重複ユーザー作成なし ✓
+- 監査ログ: challenge_issued / did_login_success / did_login_failed / did_register 記録 ✓
+- SMD: SMD無しアドレスで `{status:"none"}`（登録継続）✓
+- typecheck / lint / build（全ルート、challenge/smd/smd-apply 追加・register 削除）✓
+
+### 未実施（人間レビュー時の手動確認）
+- 実ブラウザでのウォレット作成/秘密鍵インポート→自動ログイン、ログイン署名
+- 実SMD（オンチェーンに social_meta_data がある testnet アドレス）での取得・適用
+- ※ 既存メール/パスワードアカウントはログイン不可（DID移行）。サンプル記事等の公開表示は継続
+
+---
+
 ## 追加機能: リアクション・Thanks（投稿者→読者の感謝送金）✅ 実装完了（人間レビュー推奨）(2026-06-14)
 
 **※ 投げ銭とは分離。Thanks は固定額・金額を前面に出さない・投稿者が読者へ送る。秘密鍵はローカル署名。**

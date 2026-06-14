@@ -9,6 +9,9 @@ type ProfileInitial = {
   bio: string;
   xAccount: string;
   avatarUrl: string;
+  email: string;
+  emailNotificationsEnabled: boolean;
+  websiteUrl: string;
   tokushoho: string;
   salesTerms: string;
 };
@@ -149,6 +152,39 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
             className="flex-1 rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
           />
         </div>
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        WebサイトURL（https://）
+        <input
+          type="url"
+          name="websiteUrl"
+          placeholder="https://example.com"
+          maxLength={2048}
+          defaultValue={initial.websiteUrl}
+          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        メールアドレス（任意・ログインには使いません）
+        <input
+          type="email"
+          name="email"
+          placeholder="user@example.com"
+          defaultValue={initial.email}
+          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+        />
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="emailNotificationsEnabled"
+          value="true"
+          defaultChecked={initial.emailNotificationsEnabled}
+          className="h-4 w-4"
+        />
+        メール通知を受け取る（メール登録時のみ有効）
       </label>
 
       <div className="mt-2 border-t border-gray-200 pt-4 dark:border-gray-800">

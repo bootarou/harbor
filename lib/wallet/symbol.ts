@@ -58,6 +58,22 @@ export function deriveAccount(mnemonic: string): DerivedAccount {
   return accountFromPrivateKey(privateKey);
 }
 
+/**
+ * DID ログインのため、秘密鍵でチャレンジメッセージに署名する（クライアントで実行）。
+ * 返すのは公開鍵・アドレス・署名のみ（秘密鍵は返さない）。
+ */
+export function signChallenge(
+  privateKeyHex: string,
+  message: string
+): { address: string; publicKey: string; signature: string } {
+  const account = Account.createFromPrivateKey(privateKeyHex, getNetworkType());
+  return {
+    address: account.address.plain(),
+    publicKey: account.publicKey,
+    signature: account.signData(message),
+  };
+}
+
 /** 秘密鍵(hex) から公開鍵・アドレスを導出する。 */
 export function accountFromPrivateKey(privateKeyHex: string): DerivedAccount {
   const account = Account.createFromPrivateKey(

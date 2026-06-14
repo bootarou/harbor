@@ -1,27 +1,5 @@
 import { z } from "zod";
 
-// 認証関連の入力バリデーション。サーバー・クライアント双方で共有する。
-export const registerSchema = z.object({
-  email: z.string().email("有効なメールアドレスを入力してください"),
-  password: z
-    .string()
-    .min(8, "パスワードは8文字以上にしてください")
-    .max(100, "パスワードが長すぎます"),
-  displayName: z
-    .string()
-    .min(1, "表示名を入力してください")
-    .max(50, "表示名は50文字以内にしてください"),
-});
-
-export type RegisterInput = z.infer<typeof registerSchema>;
-
-export const loginSchema = z.object({
-  email: z.string().email("有効なメールアドレスを入力してください"),
-  password: z.string().min(1, "パスワードを入力してください"),
-});
-
-export type LoginInput = z.infer<typeof loginSchema>;
-
 // X(旧Twitter) のハンドル: 先頭 @ は任意、英数字とアンダースコア、1〜15文字。
 const xHandleRegex = /^[A-Za-z0-9_]{1,15}$/;
 
@@ -52,6 +30,23 @@ export const profileSchema = z.object({
     .max(2048)
     .refine((v) => v === "" || v.startsWith("/uploads/") || /^https?:\/\//.test(v), {
       message: "アバターURLが不正です",
+    })
+    .optional()
+    .or(z.literal("")),
+  // メールは任意（ログインIDではない。通知・連絡用）
+  email: z
+    .string()
+    .trim()
+    .email("有効なメールアドレスを入力してください")
+    .optional()
+    .or(z.literal("")),
+  emailNotificationsEnabled: z.boolean().optional().default(false),
+  websiteUrl: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine((v) => v === "" || /^https:\/\//i.test(v), {
+      message: "WebサイトURLは https:// で始めてください",
     })
     .optional()
     .or(z.literal("")),

@@ -11,16 +11,30 @@ datasource db {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  avatarUrl    String?
-  bio          String?
-  xAccount     String?
-  xymAddress   String? // 公開アドレスのみ。秘密鍵は保存しない
-  tokushoho    String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
-  salesTerms   String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
-  createdAt    DateTime @default(now())
+  // ===== DID（Symbolアドレス）認証 =====
+  symbolAddress String? @unique // ログイン主識別子（DID address）。plain 39文字
+  did           String? // did:symbol:{network}:{address}
+  network       String? // testnet / mainnet
+  publicKey     String? // 署名検証用の公開鍵
+  lastLoginAt   DateTime?
+  // ===== メール（任意・ログインIDではない） =====
+  email                     String?  @unique
+  emailVerified             Boolean  @default(false)
+  emailNotificationsEnabled Boolean  @default(false)
+  passwordHash              String? // 旧メール認証の名残（DID移行後は未使用）
+  // ===== プロフィール =====
+  displayName     String
+  avatarUrl       String?
+  bio             String?
+  xAccount        String?
+  websiteUrl      String? // SMD url
+  symbolNamespace String? // SMD namespace
+  profileSource   String? // "smd" 等
+  smdSyncedAt     DateTime?
+  xymAddress      String? // 受取アドレス（通常 symbolAddress と同一）
+  tokushoho       String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
+  salesTerms      String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
+  createdAt       DateTime @default(now())
 
   posts     Post[]
   comments  Comment[]
@@ -32,6 +46,33 @@ model User {
 
   following Follow[] @relation("Following") // この人がフォローしている関係
   followers Follow[] @relation("Followers") // この人がフォローされている関係
+}
+
+model Challenge {
+  id        String   @id @default(cuid())
+  address   String // ログイン対象アドレス
+  network   String
+  nonce     String
+  message   String // 署名対象メッセージ（サーバー発行・保存）
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([address])
+}
+
+model AuthLog {
+  id        String   @id @default(cuid())
+  eventType String // challenge_issued / did_login_success / did_login_failed / did_register / smd_synced / session_revoked
+  userId    String?
+  address   String?
+  ip        String?
+  userAgent String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
 }
 
 model Follow {
