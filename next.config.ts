@@ -1,0 +1,42 @@
+import type { NextConfig } from "next";
+
+const isDev = process.env.NODE_ENV !== "production";
+
+// Content Security Policy（仕様書 §6: XSS 対策 / CSP 設定）。
+// - script/style は Next.js のインライン bootstrap・next/font のため 'unsafe-inline' を許可。
+//   （nonce ベースのより厳格な CSP は将来の強化余地）
+// - img は data:（QRコード）/ blob: / https:（S3画像）/ 自身（/uploads）を許可。
+// - connect は Symbol ノード（任意の https エンドポイント）への fetch を許可。
+const csp = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  `connect-src 'self' https:${isDev ? " ws:" : ""}`,
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+]
+  .join("; ")
+  .concat(";");
+
+const securityHeaders = [
+  { key: "Content-Security-Policy", value: csp },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=()",
+  },
+];
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
+};
+
+export default nextConfig;
