@@ -29,6 +29,7 @@ export default async function NewPostPage() {
       </div>
       <PostForm
         initial={{
+          postType: "article",
           title: "",
           contentHTML: "",
           coverImage: "",
@@ -41,6 +42,10 @@ export default async function NewPostPage() {
           sellerAddress: "",
           publishAt: "",
           defaultSellerAddress: me?.xymAddress ?? "",
+          url: "",
+          comment: "",
+          tipsEnabled: false,
+          ogp: null,
         }}
       />
     </main>

@@ -33,6 +33,7 @@ export default async function EditPostPage({
       select: {
         id: true,
         authorId: true,
+        postType: true,
         title: true,
         contentHTML: true,
         coverImage: true,
@@ -44,6 +45,13 @@ export default async function EditPostPage({
         priceAmount: true,
         priceCurrency: true,
         sellerAddress: true,
+        url: true,
+        comment: true,
+        tipsEnabled: true,
+        ogpTitle: true,
+        ogpDescription: true,
+        ogpImageUrl: true,
+        ogpSiteName: true,
       },
     }),
     prisma.user.findUnique({
@@ -70,6 +78,7 @@ export default async function EditPostPage({
       <PostForm
         initial={{
           id: post.id,
+          postType: post.postType === "external_url" ? "external_url" : "article",
           title: post.title,
           contentHTML: post.contentHTML,
           coverImage: post.coverImage ?? "",
@@ -82,6 +91,18 @@ export default async function EditPostPage({
           sellerAddress: post.sellerAddress ?? "",
           publishAt: toDatetimeLocal(post.publishAt),
           defaultSellerAddress: me?.xymAddress ?? "",
+          url: post.url ?? "",
+          comment: post.comment ?? "",
+          tipsEnabled: post.tipsEnabled,
+          ogp: post.ogpTitle || post.ogpImageUrl
+            ? {
+                title: post.ogpTitle ?? "",
+                description: post.ogpDescription ?? "",
+                imageUrl: post.ogpImageUrl ?? "",
+                siteName: post.ogpSiteName ?? "",
+                url: post.url ?? "",
+              }
+            : null,
         }}
       />
     </main>

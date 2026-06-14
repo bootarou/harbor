@@ -4,6 +4,46 @@
 
 ---
 
+## 追加機能: 記事の通報（メール通知）✅ (2026-06-14)
+- リアクション欄（「この記事はどうでしたか？」）に**控えめな通報ボタン**（薄い文字色）を追加（`components/report-button.tsx`、理由は任意入力）
+- `POST /api/reports`（要ログイン）: `Report` 記録（同一ユーザー重複は1件）→ **通知先メールへ詳細送信**
+- 通知先は `REPORT_NOTIFY_EMAIL`（既定 `bootarouapp@gmail.com`）。メール本文に記事タイトル/ID/URL/種別/投稿日時/投稿者/通報者/理由/通報日時を含む
+- 送信は SMTP（`lib/email.ts` + nodemailer、`SMTP_*` env）。**未設定時は実送信せずサーバーログに出力**（本番は SMTP 設定が必要）
+- `Report` モデル追加（postId/reporterUserId/reason、unique(postId,reporterUserId)）
+- 検証（実DB）: 未ログイン401 / 通報200・記録 / 重複は alreadyReported / メール本文（宛先 bootarouapp@gmail.com・詳細）をログで確認 / 詳細ページにボタン表示。typecheck/lint OK
+
+---
+
+## 改善: ノード冗長化（フェイルオーバー）＋ポーラー競合ハードニング ✅ (2026-06-14)
+- `NEXT_PUBLIC_SYMBOL_NODE_URL` を**カンマ区切りで複数ノード指定可能**に。`lib/wallet/symbol.ts` に `getNodeUrls()` と `nodeFetch()`（先頭から順にフェイルオーバー：ネットワークエラー/5xx/タイムアウトで次ノードへ、2xx/4xx はそのまま返す）を追加
+- ノードを叩く全箇所を `nodeFetch` に統一: ネットワーク情報取得・**TXアナウンス(PUT /transactions)**・残高・通貨モザイク・購入/Thanks検証(`verify.ts`)・SMD(`smd.ts`)・着金ポーリング(`poller.ts`)。同一署名TXは複数ノードに送ってもhash同一で二重化しない
+- ポーラーの新規Tip作成に **P2002 ハンドリング**を追加（cron と手動同期の同時実行など txHash 競合時も二重作成せず収束）
+- 検証: 先頭に死ノード+正常ノードの構成で cron ポーリングが成功（`scanned:20`、フェイルオーバー成立）。死ノードのみでは `scanned:0` かつ各アドレスはエラーを握りつぶして graceful（cron 200）。typecheck/lint/build OK
+- `.env(.example)` に複数ノード指定の記載を追加
+
+---
+
+## 追加機能: YouTube URL 専用リンクカード ✅ (2026-06-14)
+- `lib/ogp.ts` に YouTube 判定を追加。`watch?v=` / `youtu.be/` / `shorts/` / `embed/` / `live/` から動画ID(11桁)を抽出
+- YouTube の場合は OGP スクレイピングではなく **oEmbed（タイトル・投稿者取得）＋サムネイル（i.ytimg.com/vi/<id>/hqdefault.jpg）** でリンクカード生成（siteName=YouTube）
+- oEmbed 失敗時はサムネイルのみで生成（中断しない）。通常Webページは従来どおり OGP 取得
+- カードUI（プレビュー/詳細/一覧）は共通OGPフィールドのため変更なし
+- 検証: watch / youtu.be → 実タイトル＋サムネイル取得、shorts(無効ID) → フォールバック、通常URL(example.com) → 従来OGP。typecheck/lint OK
+
+---
+
+## 追加機能: 外部コンテンツURL共有投稿（OGP）✅ (2026-06-14)
+- 「記事を書く」に**投稿タイプ選択**（記事 / 外部コンテンツのURLを共有）を統合
+- `Post` に `postType`(article/external_url) と `url`/`comment`/`ogpTitle`/`ogpDescription`/`ogpImageUrl`/`ogpSiteName`/`tipsEnabled` を追加
+- **OGP取得**: `lib/ogp.ts`（SSRF対策＝http/https限定・プライベートホスト拒否・サイズ/時間制限・metaタグ解析）＋ `POST /api/ogp`（要ログイン）。フォームでプレビュー（リンクカード）表示
+- 入力: URL / コメント / タグ / 公開日時 / 投げ銭ON-OFF。記事カード・詳細でOGPリンクカード表示
+- **販売公開は禁止**（URL投稿は `paid=false` 固定、販売UIは非表示）
+- **投げ銭は条件付き**（ON時のみ、「外部コンテンツの購入ではなく紹介・キュレーションへの価値送信」と明記）
+- **著作権確認チェック2項目を必須**（未チェックは投稿不可）
+- 検証（実DB＋実OGP取得）: OGP取得(example.com)→プレビュー、URL投稿作成（paid=false固定・title自動）、著作権未チェックで保存不可、詳細にOGPカード＋コメント＋外部リンク＋投げ銭ラベル、一覧に「🔗外部リンク」バッジ、通常記事に影響なし。typecheck/lint/build OK
+
+---
+
 ## 認証刷新: Symbol DID（チャレンジ署名）＋SMD連携 ✅ 実装完了（人間レビュー必須）(2026-06-14)
 
 **※ メール/パスワード認証を廃止し、Symbol アドレス(DID)主体のチャレンジ署名認証へ全面移行（ユーザー決定）。既存のメール/パスワードアカウントはログイン不可（DIDで作り直し）。秘密鍵はサーバー非送信・ローカル署名。**

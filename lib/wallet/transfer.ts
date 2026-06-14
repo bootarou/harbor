@@ -9,7 +9,7 @@ import {
   TransferTransaction,
   UInt64,
 } from "symbol-sdk";
-import { getNetworkType, getNodeUrl } from "./symbol";
+import { getNetworkType, nodeFetch } from "./symbol";
 
 // 投げ銭の送金トランザクション作成・署名・アナウンス（すべてクライアントで実行）。
 // 秘密鍵は引数で受け取り、メモリ上でのみ使用する（保存・送信しない）。
@@ -44,10 +44,9 @@ export async function fetchNetworkParams(): Promise<NetworkParams> {
   if (cachedParams) {
     return cachedParams;
   }
-  const node = getNodeUrl();
   const [nodeInfoRes, propsRes] = await Promise.all([
-    fetch(`${node}/node/info`),
-    fetch(`${node}/network/properties`),
+    nodeFetch(`/node/info`),
+    nodeFetch(`/network/properties`),
   ]);
   if (!nodeInfoRes.ok || !propsRes.ok) {
     throw new Error("ネットワーク情報の取得に失敗しました");
@@ -123,7 +122,8 @@ export function buildSignedTip(args: {
 
 /** 署名済みトランザクションをノードへアナウンスする。 */
 export async function announceTransaction(payload: string): Promise<void> {
-  const res = await fetch(`${getNodeUrl()}/transactions`, {
+  // 同一署名TXを複数ノードへ送っても hash が同じため二重にならない（フェイルオーバー安全）。
+  const res = await nodeFetch(`/transactions`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ payload }),

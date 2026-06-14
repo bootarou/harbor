@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getCurrencyMosaicId,
   getNetworkType,
-  getNodeUrl,
+  nodeFetch,
 } from "@/lib/wallet/symbol";
 import { fetchXymJpyRate } from "@/lib/rates";
 
@@ -86,8 +86,9 @@ export type PollResult = { scanned: number; confirmed: number; created: number }
 export async function pollAddressTips(address: string): Promise<PollResult> {
   const currencyId = await getCurrencyMosaicId();
   const networkType = getNetworkType();
-  const url = `${getNodeUrl()}/transactions/confirmed?recipientAddress=${address}&type=${TRANSFER_TYPE}&order=desc&pageSize=100`;
-  const res = await fetch(url);
+  const res = await nodeFetch(
+    `/transactions/confirmed?recipientAddress=${address}&type=${TRANSFER_TYPE}&order=desc&pageSize=100`
+  );
   if (!res.ok) {
     throw new Error("トランザクションの取得に失敗しました");
   }
@@ -133,20 +134,33 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
         result.confirmed += 1;
       }
     } else {
-      await prisma.tip.create({
-        data: {
-          postId: post.id,
-          fromAddress: parsed.fromAddress,
-          toAddress: address,
-          amount: new Prisma.Decimal(parsed.amountXym),
-          txHash: parsed.txHash,
-          fromUserId: fromUser?.id ?? null,
-          confirmed: true,
-          jpyRate: jpyRateDec,
-        },
-      });
-      result.created += 1;
-      result.confirmed += 1;
+      try {
+        await prisma.tip.create({
+          data: {
+            postId: post.id,
+            fromAddress: parsed.fromAddress,
+            toAddress: address,
+            amount: new Prisma.Decimal(parsed.amountXym),
+            txHash: parsed.txHash,
+            fromUserId: fromUser?.id ?? null,
+            confirmed: true,
+            jpyRate: jpyRateDec,
+          },
+        });
+        result.created += 1;
+        result.confirmed += 1;
+      } catch (e) {
+        // 別のポーリング/クライアント記録と競合（txHash 重複）した場合は
+        // 既に記録済みなので無視（確定済みへの更新は次回ポーリングで収束）。
+        if (
+          !(
+            e instanceof Prisma.PrismaClientKnownRequestError &&
+            e.code === "P2002"
+          )
+        ) {
+          throw e;
+        }
+      }
     }
   }
 

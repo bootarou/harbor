@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { REACTION_TYPES } from "@/lib/thanks";
 import { toggleReaction } from "@/app/reactions/actions";
+import { ReportButton } from "@/components/report-button";
 
 export function ReactionBar({
   postId,
@@ -67,6 +68,8 @@ export function ReactionBar({
           してください。
         </p>
       )}
+
+      <ReportButton postId={postId} isLoggedIn={isLoggedIn} />
     </div>
   );
 }

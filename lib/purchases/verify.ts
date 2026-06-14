@@ -4,7 +4,7 @@ import { Address } from "symbol-sdk";
 import {
   getCurrencyMosaicId,
   getNetworkType,
-  getNodeUrl,
+  nodeFetch,
 } from "@/lib/wallet/symbol";
 import { decodeMessage } from "@/lib/tips/poller";
 
@@ -30,9 +30,8 @@ export type VerifiedPurchase = {
 async function fetchTxByHash(
   hash: string
 ): Promise<{ tx: RestTx; confirmed: boolean } | null> {
-  const node = getNodeUrl();
   for (const group of ["confirmed", "unconfirmed"] as const) {
-    const res = await fetch(`${node}/transactions/${group}/${hash}`);
+    const res = await nodeFetch(`/transactions/${group}/${hash}`);
     if (res.ok) {
       const tx = (await res.json()) as RestTx;
       return { tx, confirmed: group === "confirmed" };

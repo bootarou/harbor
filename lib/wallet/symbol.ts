@@ -22,11 +22,50 @@ export function getNetworkType(): NetworkType {
   return net === "mainnet" ? NetworkType.MAIN_NET : NetworkType.TEST_NET;
 }
 
-export function getNodeUrl(): string {
-  return (
+// ノードURL一覧（NEXT_PUBLIC_SYMBOL_NODE_URL をカンマ区切りで複数指定可能）。
+export function getNodeUrls(): string[] {
+  const raw =
     process.env.NEXT_PUBLIC_SYMBOL_NODE_URL ??
-    "https://sym-test-01.opening-line.jp:3001"
-  );
+    "https://sym-test-01.opening-line.jp:3001";
+  const urls = raw
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  return urls.length > 0 ? urls : ["https://sym-test-01.opening-line.jp:3001"];
+}
+
+export function getNodeUrl(): string {
+  return getNodeUrls()[0];
+}
+
+/**
+ * 複数ノードに順次フェイルオーバーする fetch。
+ * - ネットワークエラー / 5xx / タイムアウト → 次のノードへ
+ * - 2xx / 4xx → そのまま返す（4xx は「正当な応答」として呼び出し側で処理）
+ */
+export async function nodeFetch(
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
+  const urls = getNodeUrls();
+  let lastError: unknown;
+  for (const base of urls) {
+    try {
+      const res = await fetch(`${base}${path}`, {
+        signal: AbortSignal.timeout(8000),
+        ...init,
+      });
+      if (res.status >= 500) {
+        lastError = new Error(`node ${base} responded ${res.status}`);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastError = e;
+      continue;
+    }
+  }
+  throw lastError ?? new Error("全ノードへの接続に失敗しました");
 }
 
 /** 24語の BIP39 ニーモニックを新規生成する。 */
@@ -95,7 +134,7 @@ export async function getCurrencyMosaicId(): Promise<string> {
   if (cachedCurrencyMosaicId) {
     return cachedCurrencyMosaicId;
   }
-  const res = await fetch(`${getNodeUrl()}/network/properties`);
+  const res = await nodeFetch(`/network/properties`);
   if (!res.ok) {
     throw new Error("ネットワーク情報の取得に失敗しました");
   }
@@ -114,7 +153,7 @@ export async function getCurrencyMosaicId(): Promise<string> {
 /** 指定アドレスの XYM 残高を取得する（未着金/未作成アカウントは 0）。 */
 export async function fetchXymBalance(address: string): Promise<number> {
   const currencyId = await getCurrencyMosaicId();
-  const res = await fetch(`${getNodeUrl()}/accounts/${address}`);
+  const res = await nodeFetch(`/accounts/${address}`);
   if (res.status === 404) {
     return 0;
   }

@@ -12,6 +12,11 @@ export type PostCardData = {
   paid?: boolean;
   priceAmount?: number | null;
   priceCurrency?: string | null;
+  postType?: string;
+  comment?: string | null;
+  ogpTitle?: string | null;
+  ogpImageUrl?: string | null;
+  ogpSiteName?: string | null;
   author: { displayName: string; avatarUrl: string | null };
 };
 
@@ -26,17 +31,20 @@ export function PostCard({
   post: PostCardData;
   tip?: { total: number; count: number };
 }) {
+  const isUrl = post.postType === "external_url";
+  const thumb = isUrl ? post.ogpImageUrl : post.coverImage;
+  const heading = isUrl ? post.ogpTitle || post.title : post.title;
+  const excerpt = isUrl
+    ? post.comment ?? ""
+    : htmlToText(post.contentHTML, 80);
+
   return (
     <li className="overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700">
       <Link href={`/posts/${post.id}`} className="flex h-full flex-col">
         <div className="aspect-video w-full bg-gray-100 dark:bg-gray-800">
-          {post.coverImage ? (
+          {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.coverImage}
-              alt=""
-              className="h-full w-full object-cover"
-            />
+            <img src={thumb} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <span className="select-none text-2xl font-bold tracking-widest text-gray-300 dark:text-gray-700">
@@ -46,6 +54,11 @@ export function PostCard({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col p-3">
+          {isUrl && (
+            <span className="mb-1 self-start rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+              🔗 外部リンク
+            </span>
+          )}
           {post.paid && (
             <span className="mb-1 self-start rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
               有料
@@ -54,9 +67,9 @@ export function PostCard({
                 : ""}
             </span>
           )}
-          <h2 className="line-clamp-2 text-sm font-semibold">{post.title}</h2>
+          <h2 className="line-clamp-2 text-sm font-semibold">{heading}</h2>
           <p className="mt-1 line-clamp-2 text-xs text-gray-600 dark:text-gray-400">
-            {htmlToText(post.contentHTML, 80)}
+            {excerpt}
           </p>
           {tip && tip.count > 0 && (
             <span className="mt-2 self-start rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">

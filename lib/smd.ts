@@ -1,7 +1,7 @@
 import "server-only";
 import "@/lib/wallet/polyfill";
 import { KeyGenerator, Address } from "symbol-sdk";
-import { getNodeUrl } from "@/lib/wallet/symbol";
+import { nodeFetch } from "@/lib/wallet/symbol";
 
 // SMD（social_meta_data）: Symbol アカウントメタデータからプロフィール候補を取得する。
 // 「ユーザー自身による宣言データ」として扱い、無条件に信用しない（本人発行のみ・形式検証）。
@@ -83,11 +83,11 @@ function validate(json: unknown): SmdCandidate | null {
  */
 export async function fetchSmd(address: string): Promise<SmdResult> {
   const keyHex = KeyGenerator.generateUInt64Key(SMD_KEY).toHex();
-  const url = `${getNodeUrl()}/metadata?targetAddress=${address}&scopedMetadataKey=${keyHex}&metadataType=0&pageSize=20`;
+  const path = `/metadata?targetAddress=${address}&scopedMetadataKey=${keyHex}&metadataType=0&pageSize=20`;
 
   let res: Response;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(7000) });
+    res = await nodeFetch(path);
   } catch {
     return { status: "none" };
   }

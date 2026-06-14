@@ -74,6 +74,14 @@ export default async function PostDetailPage({
       tags: true,
       createdAt: true,
       publishAt: true,
+      postType: true,
+      url: true,
+      comment: true,
+      ogpTitle: true,
+      ogpDescription: true,
+      ogpImageUrl: true,
+      ogpSiteName: true,
+      tipsEnabled: true,
       paid: true,
       paidHtml: true,
       priceAmount: true,
@@ -149,6 +157,8 @@ export default async function PostDetailPage({
     hasPurchased = purchase !== null;
   }
   const canReadPaid = !post.paid || isAuthor || hasPurchased;
+  const isUrl = post.postType === "external_url";
+  const tipAllowed = !isUrl || post.tipsEnabled;
 
   // リアクション集計と、ログインユーザー自身のリアクション
   const [reactionGroups, myReactions] = await Promise.all([
@@ -202,55 +212,89 @@ export default async function PostDetailPage({
           )}
         </p>
 
-        {post.coverImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={post.coverImage}
-            alt=""
-            className="mt-6 max-h-96 w-full rounded-lg object-cover"
-          />
-        ) : (
-          <div className="mt-6 flex h-48 w-full items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-            <span className="select-none text-5xl font-bold tracking-widest text-gray-300 dark:text-gray-700">
-              Harbor
-            </span>
+        {isUrl ? (
+          <div className="mt-6 flex flex-col gap-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {post.author.displayName} さんが外部コンテンツを共有しました
+            </p>
+            {post.comment && (
+              <p className="whitespace-pre-wrap text-sm">{post.comment}</p>
+            )}
+            {post.url && (
+              <a
+                href={post.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+              >
+                {post.ogpImageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={post.ogpImageUrl} alt="" className="max-h-72 w-full object-cover" />
+                )}
+                <div className="p-3">
+                  <p className="font-semibold">{post.ogpTitle || post.url}</p>
+                  {post.ogpDescription && (
+                    <p className="mt-1 line-clamp-3 text-sm text-gray-600 dark:text-gray-400">
+                      {post.ogpDescription}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-400">
+                    {post.ogpSiteName || post.url}
+                  </p>
+                </div>
+              </a>
+            )}
           </div>
-        )}
-
-        {/* 無料部分（販売記事では試し読み）。保存時に sanitize 済み。 */}
-        <div
-          className="prose prose-sm dark:prose-invert mt-8 max-w-none"
-          dangerouslySetInnerHTML={{ __html: post.contentHTML }}
-        />
-
-        {post.paid && canReadPaid && post.paidHtml && (
-          <div
-            className="prose prose-sm dark:prose-invert mt-2 max-w-none"
-            dangerouslySetInnerHTML={{ __html: post.paidHtml }}
-          />
-        )}
-
-        {post.paid && canReadPaid && !isAuthor && (
-          <p className="mt-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
-            ✓ 購入済み（全文を表示しています）
-          </p>
-        )}
-
-        {post.paid &&
-          !canReadPaid &&
-          post.sellerAddress &&
-          post.priceAmount && (
-            <div className="mt-6">
-              <PurchasePanel
-                postId={post.id}
-                title={post.title}
-                authorName={post.author.displayName}
-                sellerAddress={post.sellerAddress}
-                priceAmount={Number(post.priceAmount)}
-                priceCurrency={post.priceCurrency ?? "XYM"}
+        ) : (
+          <>
+            {post.coverImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.coverImage}
+                alt=""
+                className="mt-6 max-h-96 w-full rounded-lg object-cover"
               />
-            </div>
-          )}
+            ) : (
+              <div className="mt-6 flex h-48 w-full items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+                <span className="select-none text-5xl font-bold tracking-widest text-gray-300 dark:text-gray-700">
+                  Harbor
+                </span>
+              </div>
+            )}
+
+            {/* 無料部分（販売記事では試し読み）。保存時に sanitize 済み。 */}
+            <div
+              className="prose prose-sm dark:prose-invert mt-8 max-w-none"
+              dangerouslySetInnerHTML={{ __html: post.contentHTML }}
+            />
+
+            {post.paid && canReadPaid && post.paidHtml && (
+              <div
+                className="prose prose-sm dark:prose-invert mt-2 max-w-none"
+                dangerouslySetInnerHTML={{ __html: post.paidHtml }}
+              />
+            )}
+
+            {post.paid && canReadPaid && !isAuthor && (
+              <p className="mt-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
+                ✓ 購入済み（全文を表示しています）
+              </p>
+            )}
+
+            {post.paid && !canReadPaid && post.sellerAddress && post.priceAmount && (
+              <div className="mt-6">
+                <PurchasePanel
+                  postId={post.id}
+                  title={post.title}
+                  authorName={post.author.displayName}
+                  sellerAddress={post.sellerAddress}
+                  priceAmount={Number(post.priceAmount)}
+                  priceCurrency={post.priceCurrency ?? "XYM"}
+                />
+              </div>
+            )}
+          </>
+        )}
 
         {post.tags.length > 0 && (
           <div className="mt-8 flex flex-wrap gap-2">
@@ -276,9 +320,12 @@ export default async function PostDetailPage({
         />
       </section>
 
+      {tipAllowed && (
       <section className="mt-12">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">投げ銭</h2>
+          <h2 className="text-lg font-semibold">
+            {isUrl ? "投げ銭（紹介・キュレーションへの価値送信）" : "投げ銭"}
+          </h2>
           <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             💴 合計 {formatXym(tipTotal)} XYM・{tipCount} 件
           </span>
@@ -318,6 +365,7 @@ export default async function PostDetailPage({
           </ul>
         )}
       </section>
+      )}
 
       <section className="mt-12">
         <h2 className="mb-4 text-sm font-semibold">著者について</h2>

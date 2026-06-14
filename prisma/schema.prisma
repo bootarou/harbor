@@ -41,11 +41,25 @@ model User {
   sentTips  Tip[]      @relation("SentTips")
   purchases Purchase[] @relation("Purchases")
   reactions Reaction[] @relation("Reactions")
+  reports   Report[]   @relation("Reports")
   thanksSent     Thanks[] @relation("ThanksSent")
   thanksReceived Thanks[] @relation("ThanksReceived")
 
   following Follow[] @relation("Following") // この人がフォローしている関係
   followers Follow[] @relation("Followers") // この人がフォローされている関係
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  postId         String
+  post           Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporterUserId String?
+  reporter       User?    @relation("Reports", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  @@unique([postId, reporterUserId])
+  @@index([postId])
 }
 
 model Challenge {
@@ -92,11 +106,22 @@ model Post {
   authorId    String
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   title       String
-  contentHTML String   @db.Text // 通常公開: 全文 / 販売公開: 試し読み(無料)部分
+  contentHTML String   @db.Text // 通常公開: 全文 / 販売公開: 試し読み(無料)部分 / URL投稿: 未使用
   coverImage  String?
   published   Boolean  @default(false)
   tags        String[] @default([])
   publishAt   DateTime? // 公開日時。未来なら未公開扱い
+
+  // 投稿タイプ: "article"（通常記事） / "external_url"（外部URL共有）
+  postType    String  @default("article")
+  // 外部URL投稿用
+  url            String?
+  comment        String? @db.Text // 投稿者コメント（プレーンテキスト・表示時エスケープ）
+  ogpTitle       String?
+  ogpDescription String?
+  ogpImageUrl    String?
+  ogpSiteName    String?
+  tipsEnabled    Boolean @default(true) // URL投稿の投げ銭ON/OFF（通常記事は常に可）
 
   // 販売公開（有料記事）関連
   paid          Boolean  @default(false)
@@ -112,6 +137,7 @@ model Post {
   tips      Tip[]
   purchases Purchase[]
   reactions Reaction[]
+  reports   Report[]
   thanks    Thanks[]
 
   @@index([authorId])
