@@ -31,6 +31,11 @@ export async function generateMetadata({
       coverImage: true,
       published: true,
       publishAt: true,
+      postType: true,
+      comment: true,
+      ogpTitle: true,
+      ogpDescription: true,
+      ogpImageUrl: true,
     },
   });
   // 未公開・予約（公開日時が未来）の記事はメタ情報を出さない（本文抜粋の漏えい防止）。
@@ -40,15 +45,36 @@ export async function generateMetadata({
   if (!post || !isLive) {
     return { title: "記事" };
   }
-  const description = htmlToText(post.contentHTML, 120);
+
+  // 外部URL共有投稿は OGP フィールド（取得済み）を、通常記事は本文/カバー画像を使う。
+  const isExternal = post.postType === "external_url";
+  const title = (isExternal ? post.ogpTitle || post.title : post.title) || "記事";
+  const description = isExternal
+    ? post.comment?.trim() ||
+      post.ogpDescription?.trim() ||
+      "外部コンテンツの紹介"
+    : htmlToText(post.contentHTML, 120);
+  // 画像が無い記事はサイト共通のフォールバック OG 画像を使う。
+  const image = (isExternal ? post.ogpImageUrl : post.coverImage) || "/og-default.png";
+  const images = [image];
+  const url = `/posts/${id}`;
+
   return {
-    title: post.title,
+    title,
     description,
+    alternates: { canonical: url },
     openGraph: {
-      title: post.title,
+      title,
       description,
+      url,
       type: "article",
-      images: post.coverImage ? [post.coverImage] : undefined,
+      images,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images,
     },
   };
 }

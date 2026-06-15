@@ -28,6 +28,13 @@ export const metadata: Metadata = {
     title: "Harbor",
     description: "Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
     type: "website",
+    images: ["/og-default.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Harbor",
+    description: "Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
+    images: ["/og-default.png"],
   },
 };
 
