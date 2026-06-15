@@ -8,6 +8,7 @@ import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
+import { BookmarkButton } from "@/components/bookmark-button";
 import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
@@ -211,6 +212,14 @@ export default async function PostDetailPage({
   for (const g of reactionGroups) reactionCounts[g.type] = g._count;
   const myReactionKeys = myReactions.map((r) => r.type);
 
+  // ログインユーザーのブックマーク状態
+  const isBookmarked = currentUserId
+    ? (await prisma.bookmark.findUnique({
+        where: { userId_postId: { userId: currentUserId, postId: post.id } },
+        select: { id: true },
+      })) !== null
+    : false;
+
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <ViewTracker postId={post.id} />
@@ -244,6 +253,9 @@ export default async function PostDetailPage({
             <Link href={`/posts/${post.id}/edit`} className="underline">
               編集
             </Link>
+          )}
+          {currentUserId && (
+            <BookmarkButton postId={post.id} isBookmarked={isBookmarked} />
           )}
         </p>
 

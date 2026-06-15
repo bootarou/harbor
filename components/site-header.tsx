@@ -44,6 +44,7 @@ export function SiteHeader() {
   const links = session?.user
     ? [
         { href: "/feed", label: "フォロー中" },
+        { href: "/bookmarks", label: "ブックマーク" },
         { href: "/notifications", label: "通知" },
         { href: "/dashboard", label: "マイ記事" },
         { href: "/wallet", label: "ウォレット" },

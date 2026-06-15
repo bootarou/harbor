@@ -48,6 +48,7 @@ model User {
 
   following Follow[] @relation("Following") // この人がフォローしている関係
   followers Follow[] @relation("Followers") // この人がフォローされている関係
+  bookmarks Bookmark[]
 }
 
 model Report {
@@ -141,10 +142,24 @@ model Post {
   reactions Reaction[]
   reports   Report[]
   thanks    Thanks[]
+  bookmarks Bookmark[]
 
   @@index([authorId])
   @@index([published, createdAt])
   @@index([tags], type: Gin)
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@index([userId, createdAt])
+  @@index([postId])
 }
 
 model Reaction {
