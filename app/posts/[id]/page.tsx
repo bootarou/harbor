@@ -9,6 +9,7 @@ import { TipBox } from "@/components/tip/tip-box";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
 import { BookmarkButton } from "@/components/bookmark-button";
+import { ShareButtons } from "@/components/share-buttons";
 import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
@@ -258,6 +259,13 @@ export default async function PostDetailPage({
             <BookmarkButton postId={post.id} isBookmarked={isBookmarked} />
           )}
         </p>
+
+        <div className="mt-3">
+          <ShareButtons
+            url={`${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/posts/${post.id}`}
+            title={post.title}
+          />
+        </div>
 
         {isUrl ? (
           <div className="mt-6 flex flex-col gap-4">
