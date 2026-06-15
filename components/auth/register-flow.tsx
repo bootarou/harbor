@@ -8,7 +8,7 @@ import {
   generateMnemonic,
   isValidMnemonic,
 } from "@/lib/wallet/symbol";
-import { encryptPrivateKey } from "@/lib/wallet/crypto";
+import { encryptPrivateKey, WebCryptoUnavailableError } from "@/lib/wallet/crypto";
 import { saveStoredWallet } from "@/lib/wallet/storage";
 import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import type { SmdCandidate } from "@/lib/smd";
@@ -137,7 +137,9 @@ function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) 
       router.refresh();
     } catch (e) {
       console.error(e);
-      setError("登録に失敗しました");
+      setError(
+        e instanceof WebCryptoUnavailableError ? e.message : "登録に失敗しました"
+      );
       setBusy(false);
     }
   }
@@ -243,7 +245,9 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
       router.refresh();
     } catch (e) {
       console.error(e);
-      setError("復元に失敗しました");
+      setError(
+        e instanceof WebCryptoUnavailableError ? e.message : "復元に失敗しました"
+      );
       setBusy(false);
     }
   }

@@ -16,6 +16,27 @@ const SALT_BYTES = 16;
 const IV_BYTES = 12;
 const KEY_BITS = 256;
 
+// Web Crypto(crypto.subtle) は secure context（HTTPS または localhost）でのみ利用可能。
+// http://<LAN-IP> 等の非セキュアコンテキストでは undefined になり暗号化/復号に失敗する。
+export class WebCryptoUnavailableError extends Error {
+  constructor() {
+    super(
+      "この接続では暗号化機能(Web Crypto)が使えません。HTTPS でアクセスしてください（http://192.168.x.x のようなLAN接続では動作しません）。"
+    );
+    this.name = "WebCryptoUnavailableError";
+  }
+}
+
+function assertWebCrypto(): void {
+  if (
+    typeof crypto === "undefined" ||
+    typeof crypto.subtle === "undefined" ||
+    typeof crypto.subtle.importKey !== "function"
+  ) {
+    throw new WebCryptoUnavailableError();
+  }
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -74,6 +95,7 @@ export async function encryptPrivateKey(
   passphrase: string,
   address: string
 ): Promise<EncryptedWallet> {
+  assertWebCrypto();
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const key = await deriveAesKey(passphrase, salt);
@@ -109,6 +131,7 @@ export async function decryptPrivateKey(
   wallet: EncryptedWallet,
   passphrase: string
 ): Promise<string> {
+  assertWebCrypto();
   const salt = base64ToBytes(wallet.salt);
   const iv = base64ToBytes(wallet.iv);
   const key = await deriveAesKey(passphrase, salt);
