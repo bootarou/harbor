@@ -9,7 +9,10 @@ const isDev = process.env.NODE_ENV !== "production";
 // - connect は Symbol ノード（任意の https エンドポイント）への fetch を許可。
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'wasm-unsafe-eval': symbol-hd-wallets→bip32→tiny-secp256k1 がブラウザで
+  // WebAssembly(secp256k1.wasm) を使うため必須。これが無いと本番でウォレット系
+  // （ログイン/新規登録/送金）の JS が CSP に阻まれ動かない。
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",

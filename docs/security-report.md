@@ -147,6 +147,10 @@ IP 制限が回避され得る。複数プロセス/スケールアウト時は 
 **推奨対策**: Next.js の **nonce ベース CSP**（`'strict-dynamic'` + per-request nonce）へ移行し
 `'unsafe-inline'` を除去。`img-src ... https:` も可能なら S3/YT ドメインに限定。
 
+**注記（2026-06-15）**: ウォレットの HD 鍵導出が `tiny-secp256k1` の **WebAssembly** を使うため、
+本番 `script-src` に **`'wasm-unsafe-eval'`** を追加（無いと本番でログイン/登録/送金の JS が CSP に阻まれ
+動かない）。`'wasm-unsafe-eval'` は WASM コンパイルのみを許可し、任意の JS `eval` は許可しない比較的安全な指定。
+
 ---
 
 ## Low / 情報

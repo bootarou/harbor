@@ -14,14 +14,16 @@ function NotificationBadge({ count }: { count: number }) {
   );
 }
 
+// クリックで親 <details> を閉じる（JS が動く場合の進化的拡張。
+// JS が無い/動かない端末ではリンクは通常遷移し、遷移先で details は閉じた状態になる）。
+function closeDetails(e: React.MouseEvent<HTMLElement>) {
+  e.currentTarget.closest("details")?.removeAttribute("open");
+}
+
 export function SiteHeader() {
-  const { data: session, status } = useSession();
-  const [open, setOpen] = useState(false);
+  const { data: session } = useSession();
   const [unread, setUnread] = useState(0);
   const pathname = usePathname();
-
-  // ナビ項目を一元管理し、デスクトップ（横並び）とモバイル（ドロワー）で共用する。
-  const close = () => setOpen(false);
 
   const userId = session?.user?.id;
 
@@ -56,13 +58,13 @@ export function SiteHeader() {
   return (
     <header className="border-b border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <Link href="/" className="font-bold" onClick={close}>
+        <Link href="/" className="font-bold">
           Harbor
         </Link>
 
         {/* デスクトップ: 横並びナビ */}
         <nav className="hidden items-center gap-3 text-sm sm:flex">
-          {status === "loading" ? null : session?.user ? (
+          {session?.user ? (
             <>
               <Link
                 href="/posts/new"
@@ -101,81 +103,63 @@ export function SiteHeader() {
           )}
         </nav>
 
-        {/* モバイル: ハンバーガーボタン */}
-        {status === "loading" ? null : (
-          <button
-            type="button"
+        {/* モバイル: ネイティブ <details> によるメニュー（JSなしでも開閉可能） */}
+        <details className="relative sm:hidden">
+          <summary
             aria-label="メニュー"
-            aria-expanded={open}
-            aria-controls="mobile-menu"
-            onClick={() => setOpen((v) => !v)}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 sm:hidden dark:border-gray-700"
+            className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-md border border-gray-300 dark:border-gray-700 [&::-webkit-details-marker]:hidden"
           >
-            {open ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* モバイル: ドロワー */}
-      {open && status !== "loading" && (
-        <nav
-          id="mobile-menu"
-          className="border-t border-gray-200 px-4 py-2 text-sm sm:hidden dark:border-gray-800"
-        >
-          {session?.user ? (
-            <div className="flex flex-col">
-              <Link
-                href="/posts/new"
-                onClick={close}
-                className="rounded-md py-2 font-medium"
-              >
-                記事を書く
-              </Link>
-              {links.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  onClick={close}
-                  aria-current={pathname === l.href ? "page" : undefined}
-                  className="rounded-md py-2 hover:underline"
-                >
-                  {l.label}
-                  {l.href === "/notifications" && (
-                    <NotificationBadge count={unread} />
-                  )}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </summary>
+          <nav
+            id="mobile-menu"
+            className="absolute right-0 top-full z-20 mt-2 flex w-56 flex-col rounded-md border border-gray-200 bg-white p-2 text-sm shadow-lg dark:border-gray-800 dark:bg-gray-950"
+          >
+            {session?.user ? (
+              <>
+                <Link href="/posts/new" onClick={closeDetails} className="rounded-md px-2 py-2 font-medium">
+                  記事を書く
                 </Link>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  close();
-                  signOut({ callbackUrl: "/" });
-                }}
-                className="rounded-md py-2 text-left hover:underline"
-              >
-                ログアウト
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              <Link href="/login" onClick={close} className="rounded-md py-2 hover:underline">
-                ログイン
-              </Link>
-              <Link href="/register" onClick={close} className="rounded-md py-2 hover:underline">
-                新規登録
-              </Link>
-            </div>
-          )}
-        </nav>
-      )}
+                {links.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={closeDetails}
+                    aria-current={pathname === l.href ? "page" : undefined}
+                    className="rounded-md px-2 py-2 hover:underline"
+                  >
+                    {l.label}
+                    {l.href === "/notifications" && (
+                      <NotificationBadge count={unread} />
+                    )}
+                  </Link>
+                ))}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    closeDetails(e);
+                    signOut({ callbackUrl: "/" });
+                  }}
+                  className="rounded-md px-2 py-2 text-left hover:underline"
+                >
+                  ログアウト
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={closeDetails} className="rounded-md px-2 py-2 hover:underline">
+                  ログイン
+                </Link>
+                <Link href="/register" onClick={closeDetails} className="rounded-md px-2 py-2 hover:underline">
+                  新規登録
+                </Link>
+              </>
+            )}
+          </nav>
+        </details>
+      </div>
     </header>
   );
 }
