@@ -75,7 +75,7 @@ export function DidLogin() {
           href="/register?mode=import"
           className="rounded-md border border-gray-300 px-4 py-2.5 text-center text-sm font-medium dark:border-gray-700"
         >
-          秘密鍵をインポートする
+          リカバリーフレーズ／秘密鍵で復元する
         </Link>
       </div>
     );
@@ -117,7 +117,7 @@ export function DidLogin() {
           新しいアドレスを作成
         </Link>
         <Link href="/register?mode=import" className="underline">
-          秘密鍵をインポート
+          フレーズ／秘密鍵で復元
         </Link>
       </div>
     </form>

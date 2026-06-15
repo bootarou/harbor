@@ -6,6 +6,7 @@ import {
   accountFromPrivateKey,
   deriveAccount,
   generateMnemonic,
+  isValidMnemonic,
 } from "@/lib/wallet/symbol";
 import { encryptPrivateKey } from "@/lib/wallet/crypto";
 import { saveStoredWallet } from "@/lib/wallet/storage";
@@ -35,11 +36,11 @@ function BackupChecks({
       </p>
       <label className="mt-2 flex items-start gap-2">
         <input type="checkbox" checked={c1} onChange={(e) => setC1(e.target.checked)} className="mt-0.5" />
-        秘密鍵を安全な場所にバックアップしました
+        リカバリーフレーズ（または秘密鍵）を安全な場所にバックアップしました
       </label>
       <label className="mt-1 flex items-start gap-2">
         <input type="checkbox" checked={c2} onChange={(e) => setC2(e.target.checked)} className="mt-0.5" />
-        秘密鍵を失うと復旧できないことを理解しました
+        リカバリー情報を失うと復旧できないことを理解しました
       </label>
     </div>
   );
@@ -73,7 +74,7 @@ export function RegisterFlow() {
         onClick={() => setMode("import")}
         className="rounded-md border border-gray-300 px-4 py-2.5 text-sm font-medium dark:border-gray-700"
       >
-        秘密鍵をインポートする
+        リカバリーフレーズ／秘密鍵で復元する
       </button>
     </div>
   );
@@ -168,6 +169,9 @@ function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) 
 }
 
 function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) {
+  // 既定はリカバリーフレーズ（作成時にバックアップを案内している情報）。
+  const [via, setVia] = useState<"phrase" | "privateKey">("phrase");
+  const [phrase, setPhrase] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [p1, setP1] = useState("");
   const [p2, setP2] = useState("");
@@ -184,14 +188,29 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
 
   async function finish() {
     setError(null);
-    const pk = privateKey.trim();
-    if (!PRIVATE_KEY_RE.test(pk)) return setError("秘密鍵の形式が正しくありません（64桁の16進数）。");
+    // 入力（フレーズ or 秘密鍵）から秘密鍵を導出する。
+    let derivedPrivateKey: string;
+    try {
+      if (via === "phrase") {
+        const words = phrase.trim().replace(/\s+/g, " ");
+        if (!isValidMnemonic(words))
+          return setError("リカバリーフレーズが正しくありません（12語または24語）。");
+        derivedPrivateKey = deriveAccount(words).privateKey;
+      } else {
+        const pk = privateKey.trim();
+        if (!PRIVATE_KEY_RE.test(pk))
+          return setError("秘密鍵の形式が正しくありません（64桁の16進数）。");
+        derivedPrivateKey = accountFromPrivateKey(pk).privateKey;
+      }
+    } catch {
+      return setError("入力からウォレットを復元できませんでした。");
+    }
     if (p1.length < 8) return setError("パスワードは8文字以上にしてください。");
     if (p1 !== p2) return setError("パスワードが一致しません。");
     if (!c1 || !c2) return setError("バックアップ確認にチェックしてください。");
     setBusy(true);
     try {
-      const account = accountFromPrivateKey(pk);
+      const account = accountFromPrivateKey(derivedPrivateKey);
       // SMD 候補を取得（任意・確認用。失敗しても続行）
       try {
         const r = await fetch(`/api/smd?address=${account.address}`);
@@ -224,7 +243,7 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
       router.refresh();
     } catch (e) {
       console.error(e);
-      setError("秘密鍵からの復元に失敗しました");
+      setError("復元に失敗しました");
       setBusy(false);
     }
   }
@@ -235,18 +254,49 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
         ← 戻る
       </button>
       <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-200">
-        秘密鍵はブラウザ内で処理され、サーバーには送信されません。
-        秘密鍵またはリカバリー情報を失うと、アカウントにアクセスできなくなる可能性があります。
+        入力はブラウザ内で処理され、サーバーには送信されません。
+        リカバリーフレーズまたは秘密鍵を失うと、アカウントにアクセスできなくなる可能性があります。
       </p>
-      <label className="flex flex-col gap-1 text-sm">
-        秘密鍵（64桁の16進数）
-        <input
-          type="password"
-          value={privateKey}
-          onChange={(e) => setPrivateKey(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-900"
-        />
-      </label>
+
+      {/* 入力方法の切り替え */}
+      <div className="inline-flex rounded-md border border-gray-300 p-0.5 text-xs dark:border-gray-700">
+        <button
+          type="button"
+          onClick={() => setVia("phrase")}
+          className={`rounded px-3 py-1.5 ${via === "phrase" ? "bg-black text-white dark:bg-white dark:text-black" : ""}`}
+        >
+          リカバリーフレーズ
+        </button>
+        <button
+          type="button"
+          onClick={() => setVia("privateKey")}
+          className={`rounded px-3 py-1.5 ${via === "privateKey" ? "bg-black text-white dark:bg-white dark:text-black" : ""}`}
+        >
+          秘密鍵
+        </button>
+      </div>
+
+      {via === "phrase" ? (
+        <label className="flex flex-col gap-1 text-sm">
+          リカバリーフレーズ（12語または24語をスペース区切りで入力）
+          <textarea
+            rows={3}
+            value={phrase}
+            onChange={(e) => setPhrase(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
+          />
+        </label>
+      ) : (
+        <label className="flex flex-col gap-1 text-sm">
+          秘密鍵（64桁の16進数）
+          <input
+            type="password"
+            value={privateKey}
+            onChange={(e) => setPrivateKey(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-900"
+          />
+        </label>
+      )}
       <PassphraseFields p1={p1} p2={p2} setP1={setP1} setP2={setP2} />
       <BackupChecks c1={c1} c2={c2} setC1={setC1} setC2={setC2} />
 
