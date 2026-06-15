@@ -1,16 +1,12 @@
 import Link from "next/link";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { PostCard } from "@/components/post-card";
-import { livePostWhere } from "@/lib/posts";
+import { PostFeed } from "@/components/post-feed";
+import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
 
-const PAGE_SIZE = 12;
-
-function buildQuery(opts: { page?: number; q?: string; tag?: string }): string {
+function buildQuery(opts: { q?: string; tag?: string }): string {
   const sp = new URLSearchParams();
   if (opts.q) sp.set("q", opts.q);
   if (opts.tag) sp.set("tag", opts.tag);
-  if (opts.page && opts.page > 1) sp.set("page", String(opts.page));
   const s = sp.toString();
   return s ? `/?${s}` : "/";
 }
@@ -18,78 +14,20 @@ function buildQuery(opts: { page?: number; q?: string; tag?: string }): string {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string; tag?: string }>;
+  searchParams: Promise<{ q?: string; tag?: string }>;
 }) {
   const sp = await searchParams;
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
   const q = sp.q?.trim() ?? "";
   const tag = sp.tag?.trim() ?? "";
 
-  const conds: Prisma.PostWhereInput[] = [livePostWhere()];
-  if (tag) conds.push({ tags: { has: tag } });
-  if (q) {
-    conds.push({
-      OR: [
-        { title: { contains: q, mode: "insensitive" } },
-        { contentHTML: { contains: q, mode: "insensitive" } },
-        { comment: { contains: q, mode: "insensitive" } },
-      ],
-    });
-  }
-  const where: Prisma.PostWhereInput = { AND: conds };
+  const filtering = q !== "" || tag !== "";
 
-  const [total, posts, tagRows] = await Promise.all([
-    prisma.post.count({ where }),
-    prisma.post.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      select: {
-        id: true,
-        title: true,
-        contentHTML: true,
-        coverImage: true,
-        tags: true,
-        createdAt: true,
-        viewCount: true,
-        paid: true,
-        priceAmount: true,
-        priceCurrency: true,
-        postType: true,
-        comment: true,
-        ogpTitle: true,
-        ogpImageUrl: true,
-        ogpSiteName: true,
-        author: { select: { displayName: true, avatarUrl: true } },
-      },
-    }),
+  const [{ posts, hasMore }, total, tagRows] = await Promise.all([
+    getPostsPage({ page: 1, q, tag }),
+    filtering ? prisma.post.count({ where: buildPostWhere({ q, tag }) }) : Promise.resolve(0),
     // タグナビ用（公開中の記事のタグを集計）
-    prisma.post.findMany({
-      where: livePostWhere(),
-      select: { tags: true },
-    }),
+    prisma.post.findMany({ where: livePostWhere(), select: { tags: true } }),
   ]);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  // 投げ銭合計の集計
-  const postIds = posts.map((p) => p.id);
-  const tipAgg = postIds.length
-    ? await prisma.post
-        .findMany({
-          where: { id: { in: postIds } },
-          select: { id: true, tips: { select: { amount: true } } },
-        })
-        .then((rows) =>
-          rows.map((r) => ({
-            id: r.id,
-            total: r.tips.reduce((s, t) => s + Number(t.amount), 0),
-            count: r.tips.length,
-          }))
-        )
-    : [];
-  const tipMap = new Map(tipAgg.map((t) => [t.id, t]));
 
   // 上位タグ
   const tagCounts = new Map<string, number>();
@@ -100,10 +38,8 @@ export default async function Home({
     .sort((a, b) => b[1] - a[1])
     .slice(0, 15);
 
-  const filtering = q !== "" || tag !== "";
-
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10">
+    <main className="mx-auto w-full max-w-6xl px-2 py-10 sm:px-6">
       <h1 className="mb-6 text-2xl font-bold">記事一覧</h1>
 
       {/* 検索 */}
@@ -165,41 +101,13 @@ export default async function Home({
             : "まだ公開記事がありません。"}
         </p>
       ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={{
-                ...post,
-                priceAmount:
-                  post.priceAmount != null ? Number(post.priceAmount) : null,
-              }}
-              tip={tipMap.get(post.id)}
-            />
-          ))}
-        </ul>
-      )}
-
-      {totalPages > 1 && (
-        <nav className="mt-10 flex items-center justify-between text-sm">
-          {page > 1 ? (
-            <Link href={buildQuery({ page: page - 1, q, tag })} className="underline">
-              ← 前のページ
-            </Link>
-          ) : (
-            <span className="text-gray-400">← 前のページ</span>
-          )}
-          <span>
-            {page} / {totalPages}
-          </span>
-          {page < totalPages ? (
-            <Link href={buildQuery({ page: page + 1, q, tag })} className="underline">
-              次のページ →
-            </Link>
-          ) : (
-            <span className="text-gray-400">次のページ →</span>
-          )}
-        </nav>
+        <PostFeed
+          key={`${q}|${tag}`}
+          initialPosts={posts}
+          initialHasMore={hasMore}
+          q={q}
+          tag={tag}
+        />
       )}
     </main>
   );

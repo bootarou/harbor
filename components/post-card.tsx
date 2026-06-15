@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { htmlToText } from "@/lib/sanitize";
 import { formatXym } from "@/lib/format";
 
 export type PostCardData = {
   id: string;
   title: string;
-  contentHTML: string;
+  excerpt?: string; // 抜粋はサーバー側で算出して渡す（sanitize をクライアントに含めないため）
   coverImage: string | null;
   tags: string[];
-  createdAt: Date;
+  createdAt: Date | string;
   viewCount?: number;
   paid?: boolean;
   priceAmount?: number | null;
@@ -21,8 +20,10 @@ export type PostCardData = {
   author: { displayName: string; avatarUrl: string | null };
 };
 
-function formatDate(d: Date): string {
-  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(d);
+function formatDate(d: Date | string): string {
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(
+    new Date(d)
+  );
 }
 
 export function PostCard({
@@ -35,20 +36,19 @@ export function PostCard({
   const isUrl = post.postType === "external_url";
   const thumb = isUrl ? post.ogpImageUrl : post.coverImage;
   const heading = isUrl ? post.ogpTitle || post.title : post.title;
-  const excerpt = isUrl
-    ? post.comment ?? ""
-    : htmlToText(post.contentHTML, 80);
+  const excerpt = post.excerpt ?? "";
 
   return (
-    <li className="overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700">
-      <Link href={`/posts/${post.id}`} className="flex h-full flex-col">
-        <div className="aspect-video w-full bg-gray-100 dark:bg-gray-800">
+    <li className="overflow-hidden border-b border-gray-200 transition hover:border-gray-300 max-sm:last:border-b-0 sm:rounded-lg sm:border dark:border-gray-800 dark:hover:border-gray-700">
+      {/* スマホ: 横並び（左サムネ・右情報）/ sm以上: 縦カード */}
+      <Link href={`/posts/${post.id}`} className="flex h-full flex-row sm:flex-col">
+        <div className="m-3 aspect-[4/3] w-20 shrink-0 self-start overflow-hidden rounded bg-gray-100 sm:m-0 sm:aspect-video sm:w-full sm:self-auto sm:rounded-none dark:bg-gray-800">
           {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <span className="select-none text-2xl font-bold tracking-widest text-gray-300 dark:text-gray-700">
+              <span className="select-none text-xs font-bold tracking-widest text-gray-300 sm:text-2xl dark:text-gray-700">
                 Harbor
               </span>
             </div>

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostCard } from "@/components/post-card";
 import { livePostWhere } from "@/lib/posts";
+import { htmlToText } from "@/lib/sanitize";
 
 export const metadata = { title: "フォロー中" };
 
@@ -56,7 +57,7 @@ export default async function FeedPage() {
 
   if (followingIds.length === 0) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+      <main className="mx-auto w-full max-w-6xl px-2 py-10 sm:px-6">
         <h1 className="mb-6 text-2xl font-bold">フォロー中</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
           まだ誰もフォローしていません。記事の著者ページからフォローできます。{" "}
@@ -69,7 +70,7 @@ export default async function FeedPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10">
+    <main className="mx-auto w-full max-w-6xl px-2 py-10 sm:px-6">
       {/* ユーザー（横スクロール） */}
       <section className="mb-10">
         <h2 className="mb-4 text-xl font-bold">ユーザー</h2>
@@ -103,7 +104,7 @@ export default async function FeedPage() {
             フォロー中のユーザーの公開記事はまだありません。
           </p>
         ) : (
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {posts.map((post) => (
               <PostCard
                 key={post.id}
@@ -111,6 +112,10 @@ export default async function FeedPage() {
                   ...post,
                   priceAmount:
                     post.priceAmount != null ? Number(post.priceAmount) : null,
+                  excerpt:
+                    post.postType === "external_url"
+                      ? post.comment ?? ""
+                      : htmlToText(post.contentHTML, 80),
                 }}
                 tip={{
                   total: post.tips.reduce((s, t) => s + Number(t.amount), 0),
