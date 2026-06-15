@@ -87,6 +87,19 @@ export async function POST(request: Request) {
     );
   }
 
+  // 送金元(signer)が送信者(=投稿者)自身のウォレットであることを必須にする。
+  const me = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { symbolAddress: true, xymAddress: true },
+  });
+  const myAddresses = [me?.symbolAddress, me?.xymAddress].filter(Boolean);
+  if (!myAddresses.includes(verified.senderAddress)) {
+    return NextResponse.json(
+      { error: "送金元アドレスがあなたのウォレットと一致しません" },
+      { status: 403 }
+    );
+  }
+
   const jpyRate = await fetchXymJpyRate();
 
   try {

@@ -17,13 +17,13 @@
 | # | 深刻度 | 項目 | 場所 |
 |---|---|---|---|
 | 1 | ~~**High**~~ ✅ **修正済 (2026-06-15)** | OGP 取得の SSRF（DNS 未解決ブロックリスト・リダイレクト追従） | `lib/ogp.ts` |
-| 2 | Medium | 投げ銭がオンチェーン未検証で記録（金額の偽装表示） | `app/api/tips/route.ts` |
-| 3 | Medium | 購入/投げ銭が支払者本人に紐付かない（公開 txHash の横取り） | `app/api/purchases/route.ts`, `tips` |
-| 4 | Medium | レート制限が全く無い（メール爆撃・DB 肥大・SSRF 増幅） | 全 API |
+| 2 | ~~Medium~~ ✅ **修正済 (2026-06-15)** | 投げ銭がオンチェーン未検証で記録（金額の偽装表示） | `app/api/tips/route.ts` |
+| 3 | ~~Medium~~ ✅ **修正済 (2026-06-15)** | 購入/投げ銭が支払者本人に紐付かない（公開 txHash の横取り） | `app/api/purchases/route.ts`, `tips` |
+| 4 | ~~Medium~~ ✅ **修正済 (2026-06-15)** | レート制限が全く無い（メール爆撃・DB 肥大・SSRF 増幅） | 全 API |
 | 5 | Medium | CSP が `script-src 'unsafe-inline'` を許可 | `next.config.ts` |
 | 6 | Low | チャレンジの used 判定が非アトミック／期限切れ未削除 | `lib/auth.ts`, challenge |
 | 7 | Low | xymAddress を所有証明なしで保存可能 | `app/api/wallet/address/route.ts` |
-| 8 | Low | 監査ログの IP が `X-Forwarded-For` 依存（偽装可） | `lib/audit.ts` |
+| 8 | ~~Low~~ ✅ **修正済 (2026-06-15)** | 監査ログの IP が `X-Forwarded-For` 依存（偽装可） | `lib/audit.ts` |
 | 9 | Low | cron シークレット比較が非定数時間 | `app/api/cron/poll-tips/route.ts` |
 
 ---
@@ -81,6 +81,12 @@
 - 記録時に他フロー同様 `verifyTransferByHash`（marker `nagexym:tip:<postId>`・宛先=著者・額一致）で検証する、
   もしくは**公開表示は `confirmed=true` のみ**に限定する（ポーラーで確定したものだけ集計）。
 
+**対応状況（2026-06-15 修正済み）**: `app/api/tips/route.ts` を購入/Thanks と同じく `verifyTransferByHash`
+（marker `nagexym:tip:<postId>`・宛先=著者・最低額 0.1XYM）で**ノード検証**してから記録するよう変更。
+記録する**金額・送金元はオンチェーンの値**を採用（クライアント申告の `amount`/`fromAddress` は不採用）。
+`confirmed` は反映状況を反映（着金ポーリングが後から確定に更新）。これにより偽の投げ銭を作れなくなった。
+※ announce 済みなら未反映でポーラーが後追い記録するため、クライアントの「409=送信済み扱い」挙動とも整合。
+
 ### 3. 購入・投げ銭が「支払った本人」に紐付かない
 
 **場所**: `app/api/purchases/route.ts`（および `tips`）
@@ -98,6 +104,12 @@
 - 検証結果の `senderAddress`（= signer）が**セッションユーザーの登録 `xymAddress` と一致**することを必須にする。
   これにより「送金元アドレスを本人が登録している」ことが横取り防止条件になる（#7 の所有証明強化と併用が望ましい）。
 
+**対応状況（2026-06-15 修正済み）**: 購入(`app/api/purchases`)・投げ銭(`app/api/tips`)・Thanks(`app/api/thanks`)の
+各記録前に、検証 tx の `signer`（送金元）が**セッションユーザーの登録アドレス（`symbolAddress` または `xymAddress`）と
+一致**することを必須化（不一致は 403）。これにより、チェーン上で公開される他人の txHash を先に送って
+閲覧権/購入/送金者属性を横取りする攻撃を遮断。なお `symbolAddress` は DID ログインで所有が証明済み。
+（より厳密にするには #7 の「アドレス登録時の署名による所有証明」を併用）
+
 ### 4. レート制限が存在しない
 
 **場所**: 全 API（特に `app/api/auth/challenge`, `app/api/reports`, `app/api/ogp`, `app/api/upload`）
@@ -111,6 +123,18 @@
 
 **推奨対策**: IP＋ユーザー単位のレート制限（`@upstash/ratelimit` 等、または Vercel の WAF/レート制限）。
 通報は「1 ユーザーあたり N 件/時」等の上限とメール集約も検討。
+
+**対応状況（2026-06-15 修正済み）**: デプロイ構成が**自鯖ホスト + Cloudflare Tunnel（単一サーバー）**のため、
+外部依存なしの**インメモリ固定ウィンドウ**で実装（`lib/ratelimit.ts`）。クライアント IP は
+`CF-Connecting-IP` を優先取得（#8 と共通）。適用箇所と上限:
+- `/api/auth/challenge`（未認証）: **IP 20 回 / 10 分**
+- `/api/reports`: **ユーザー 5 回 / 時 ＋ IP 10 回 / 時**（メール爆撃対策）
+- `/api/ogp`: **ユーザー 30 回 / 分**（SSRF 探索の増幅対策）
+- `/api/upload`: **ユーザー 60 回 / 10 分**
+超過は `429` + `Retry-After`。ロジックは windowing / リセット / キー独立をテスト済み。
+**前提**: オリジンがトンネル以外から直接到達できないこと（FW 遮断）。直アクセス可だと CF ヘッダ偽装で
+IP 制限が回避され得る。複数プロセス/スケールアウト時は Redis 等への差し替えが必要。
+（補足: 送金系 API は #2/#3 でオンチェーン検証＋本人バインド済みのため本項の対象外）
 
 ### 5. CSP が `script-src 'unsafe-inline'` を許可
 
@@ -138,9 +162,10 @@
   他人/任意アドレスを自分のプロフィールに設定可能（主に自己不利益だが、#3 の横取り対策・著者宛投げ銭の
   整合性のため、登録時にチャレンジ署名で所有証明を取ることが望ましい）。
 
-### 8. 監査ログの IP が `X-Forwarded-For` を信頼
-- `lib/audit.ts requestMeta()` は先頭の XFF をそのまま採用。信頼できるプロキシ背後でないと**偽装可能**。
-  Vercel など**信頼プロキシが付与する値のみ**を使う設定にする（手前のプロキシ段数を考慮）。
+### 8. 監査ログの IP が `X-Forwarded-For` を信頼 ✅ 修正済 (2026-06-15)
+- `lib/audit.ts requestMeta()` は先頭の XFF をそのまま採用していた。
+- **対応**: Cloudflare Tunnel 構成に合わせ `CF-Connecting-IP` を優先取得に変更（レート制限と共通の取得関数）。
+  前提として、オリジンがトンネル以外から直接到達できないこと（FW 遮断）が必要。
 
 ### 9. cron シークレット比較が非定数時間
 - `app/api/cron/poll-tips` は `!==` 比較。ネットワーク越しのタイミング攻撃は非現実的だが、
@@ -172,9 +197,26 @@
 ## 公開前チェックリスト（優先度順）
 
 1. [x] **#1 SSRF 修正**（DNS 解決＋全 IP プライベート判定＋リダイレクト manual）— ✅ 2026-06-15 完了
-2. [ ] **#3 支払者本人バインド**（signer == 登録 xymAddress）と **#2 投げ銭の検証/確定のみ表示**
-3. [ ] **#4 レート制限**（challenge / reports / ogp / upload）と通報メールの抑制
-4. [ ] **#5 nonce ベース CSP** への移行
-5. [ ] #6〜#9 の堅牢化（チャレンジのアトミック消費・期限切れ掃除・アドレス所有証明・XFF/定数時間比較）
-6. [ ] 本番環境変数（`AUTH_SECRET`/`CRON_SECRET` を十分強いランダム値、`SMTP_*`、S3、`NEXT_PUBLIC_SITE_URL`）
-7. [ ] 依存モジュールの方針（symbol-sdk 系 major 移行の検討は別タスク）
+2. [x] **#3 支払者本人バインド**（signer == 登録アドレス）と **#2 投げ銭の検証** — ✅ 2026-06-15 完了
+3. [x] **#4 レート制限**（challenge / reports / ogp / upload）— ✅ 2026-06-15 完了（インメモリ）
+4. [x] **#8 監査 IP を CF-Connecting-IP に** — ✅ 2026-06-15 完了
+5. [ ] **#5 nonce ベース CSP** への移行（公開後の改善で可）
+6. [ ] #6/#7/#9 の堅牢化（チャレンジのアトミック消費・期限切れ掃除・アドレス所有証明・定数時間比較）
+7. [ ] 本番環境変数（`AUTH_SECRET`/`CRON_SECRET` を十分強いランダム値、`AUTH_TRUST_HOST=true`、`SMTP_*`、S3、`NEXT_PUBLIC_SITE_URL`）
+8. [ ] 依存モジュールの方針（symbol-sdk 系 major 移行の検討は別タスク）
+
+---
+
+## デプロイ構成: 自鯖ホスト + Cloudflare Tunnel（運用前提・必読）
+
+1. **オリジンを外部に直接公開しない** — `cloudflared` 経由のみ到達可能にし、サーバーの
+   公開ポート（3000 等）はファイアウォール/バインドアドレスで localhost 限定にする。
+   これが守られて初めて `CF-Connecting-IP` ベースのレート制限・監査ログが信頼できる
+   （直アクセス可だとヘッダ偽装でいずれも回避される）。
+2. **`AUTH_TRUST_HOST=true`** を設定（next-auth v5 のホスト検出。トンネル背後では必須）。
+   必要に応じ `AUTH_URL` に公開ドメインを設定。
+3. **HTTPS/Cookie** — TLS は Cloudflare が終端。セキュア Cookie はそのまま機能する。
+4. **DB バックアップ** — PostgreSQL の定期バックアップを用意（自鯖運用のため）。
+5. **任意の多層防御** — Cloudflare 側の WAF/レート制限/Bot Fight も併用推奨
+   （ただしログイン済み挙動＝通報などはアプリ側制限が主）。
+6. **ネットワーク** — `NEXT_PUBLIC_SYMBOL_NETWORK=testnet` を維持（メインネットは明示指示まで不可）。

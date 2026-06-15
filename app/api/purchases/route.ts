@@ -66,6 +66,20 @@ export async function POST(request: Request) {
     );
   }
 
+  // 送金元(signer)がログインユーザー自身のウォレットであることを必須にする。
+  // これがないと、チェーン上で公開される他人の購入 txHash を先に送られて閲覧権を横取りされる。
+  const me = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { symbolAddress: true, xymAddress: true },
+  });
+  const myAddresses = [me?.symbolAddress, me?.xymAddress].filter(Boolean);
+  if (!myAddresses.includes(verified.buyerAddress)) {
+    return NextResponse.json(
+      { error: "送金元アドレスがあなたのウォレットと一致しません" },
+      { status: 403 }
+    );
+  }
+
   const jpyRate = await fetchXymJpyRate();
 
   try {

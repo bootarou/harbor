@@ -4,6 +4,24 @@
 
 ---
 
+## セキュリティ修正: レート制限＋クライアントIP（Medium #4 / Low #8）✅ (2026-06-15)
+- デプロイ構成（自鯖 + Cloudflare Tunnel・単一サーバー）に合わせ、外部依存なしの**インメモリ固定ウィンドウ**レート制限を実装（`lib/ratelimit.ts`）
+- クライアント IP は `CF-Connecting-IP` 優先で取得（`getClientIp`）。`requestMeta`（監査ログ）も同様に変更（#8）
+- 適用: `/api/auth/challenge`(IP 20/10分)・`/api/reports`(ユーザー5/時＋IP10/時=メール爆撃対策)・`/api/ogp`(ユーザー30/分)・`/api/upload`(ユーザー60/10分)。超過は429+Retry-After
+- `.env.example` に `AUTH_TRUST_HOST=true`（トンネル背後で必須）を追記
+- 前提: オリジンをトンネル限定にする（FW遮断）こと。直アクセス可だとCFヘッダ偽装で回避される旨をレポートに明記
+- 検証: レート制限ロジック（windowing/リセット/キー独立）テスト、typecheck/lint OK
+
+---
+
+## セキュリティ修正: 投げ銭のオンチェーン検証＋支払者本人バインド（Medium #2/#3）✅ (2026-06-15)
+- #2: `app/api/tips/route.ts` を購入/Thanks と同様に `verifyTransferByHash`（marker `nagexym:tip:<postId>`・宛先=著者・最低0.1XYM）で**ノード検証**してから記録するよう変更。金額・送金元は**オンチェーンの値**を採用（クライアント申告の amount/fromAddress は不採用）。`confirmed` は反映状況（ポーラーが後追い確定）。→ 偽の投げ銭を作れなくなった
+- #3: 購入・投げ銭・Thanks の記録前に、検証 tx の signer がセッションユーザーの登録アドレス(`symbolAddress`/`xymAddress`)と一致することを必須化（不一致は403）。→ 公開 txHash を先に送って閲覧権/送金者属性を横取りする攻撃を遮断
+- announce 済みなら未反映でもポーラーが後追い記録するため、tip-box の「409=送信済み扱い」既存挙動とも整合（403/502 はエラー表示）
+- typecheck / lint OK
+
+---
+
 ## セキュリティ修正: OGP 取得の SSRF 対策（High）✅ (2026-06-15)
 - セキュリティレビュー(`docs/security-report.md`)で High と判定した OGP 取得の SSRF を修正
 - 旧: `isBlockedHost()` がホスト名の文字列マッチのみ＋`redirect:"follow"` → DNS リバインディング/リダイレクト経由で内部IP(169.254.169.254 等)へ到達可能

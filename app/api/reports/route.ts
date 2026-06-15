@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 const NOTIFY_EMAIL =
   process.env.REPORT_NOTIFY_EMAIL || "bootarouapp@gmail.com";
@@ -16,6 +17,12 @@ export async function POST(request: Request) {
       { status: 401 }
     );
   }
+
+  // 通報はメール送信を伴うため厳しめに制限（メール爆撃対策）。ユーザー＋IP 両方。
+  const userRl = rateLimit(`report:u:${session.user.id}`, 5, 60 * 60 * 1000);
+  if (!userRl.ok) return tooManyRequests(userRl.retryAfter);
+  const ipRl = rateLimit(`report:ip:${getClientIp(request)}`, 10, 60 * 60 * 1000);
+  if (!ipRl.ok) return tooManyRequests(ipRl.retryAfter);
 
   const body = (await request.json().catch(() => null)) as {
     postId?: string;

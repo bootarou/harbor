@@ -40,10 +40,12 @@ export function requestMeta(request: Request): {
   ip: string | null;
   userAgent: string | null;
 } {
+  // Cloudflare Tunnel 経由のため CF-Connecting-IP を優先（オリジンはトンネル限定前提）。
   return {
     ip:
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      request.headers.get("cf-connecting-ip") ??
       request.headers.get("x-real-ip") ??
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
       null,
     userAgent: request.headers.get("user-agent"),
   };

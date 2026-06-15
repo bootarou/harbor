@@ -3,12 +3,17 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { getNetworkName, networkAddressPrefix } from "@/lib/did";
 import { authLog, requestMeta } from "@/lib/audit";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 // ログイン用ワンタイムチャレンジを発行する。
 // 署名対象メッセージはサーバーで生成・保存し、後でクライアント申告の message は信用しない。
 export async function POST(request: Request) {
+  // 未認証で叩けるため IP 単位で制限（DB 肥大・書き込み増幅 DoS 対策）。
+  const rl = rateLimit(`challenge:${getClientIp(request)}`, 20, 10 * 60 * 1000);
+  if (!rl.ok) return tooManyRequests(rl.retryAfter);
+
   const json = (await request.json().catch(() => null)) as {
     address?: string;
   } | null;
