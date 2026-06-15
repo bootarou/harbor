@@ -1,7 +1,12 @@
 import "server-only";
+import { lookup } from "node:dns/promises";
 
-// 外部URLから OGP 情報を取得する。SSRF 対策として http/https のみ・
-// ローカル/プライベートっぽいホストを拒否し、サイズ/時間を制限する。
+// 外部URLから OGP 情報を取得する。SSRF 対策として:
+// - http/https のみ許可
+// - ホスト名を実際に DNS 解決し、解決された全 IP がプライベート/ループバック/
+//   リンクローカル/予約帯でないことを確認（DNS リバインディング型を防ぐ）
+// - リダイレクトは手動追従し、各ホップで上記検証を再実行（リダイレクト経由の回避を防ぐ）
+// - サイズ/時間/リダイレクト回数を制限する
 
 export type Ogp = {
   url: string;
@@ -11,27 +16,125 @@ export type Ogp = {
   siteName: string;
 };
 
-function isBlockedHost(host: string): boolean {
-  const h = host.toLowerCase();
-  if (
+export class OgpError extends Error {}
+
+// 明らかにローカル/内部を指すホスト名を文字列段階で拒否（DNS 解決前の早期弾き）。
+function isBlockedHostname(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return (
     h === "localhost" ||
-    h === "127.0.0.1" ||
-    h === "::1" ||
-    h === "0.0.0.0" ||
+    h.endsWith(".localhost") ||
     h.endsWith(".local") ||
     h.endsWith(".internal")
-  ) {
-    return true;
+  );
+}
+
+// IPv4 文字列を 32bit 整数へ（ドット10進のみ。dns.lookup の返り値は正規化済み）。
+function ipv4ToInt(ip: string): number | null {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    if (!/^\d{1,3}$/.test(p)) return null;
+    const v = Number(p);
+    if (v > 255) return null;
+    n = n * 256 + v;
   }
-  // 明確なプライベートIP帯（ベストエフォート）
-  if (/^10\./.test(h)) return true;
-  if (/^192\.168\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true;
+  return n >>> 0;
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  const n = ipv4ToInt(ip);
+  if (n === null) return true; // パースできない＝安全側で拒否
+  const inRange = (base: string, bits: number): boolean => {
+    const b = ipv4ToInt(base)!;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (n & mask) === (b & mask);
+  };
+  return (
+    inRange("0.0.0.0", 8) || // "this" network
+    inRange("10.0.0.0", 8) || // private
+    inRange("100.64.0.0", 10) || // CGNAT
+    inRange("127.0.0.0", 8) || // loopback
+    inRange("169.254.0.0", 16) || // link-local（クラウドメタデータ含む）
+    inRange("172.16.0.0", 12) || // private
+    inRange("192.0.0.0", 24) ||
+    inRange("192.0.2.0", 24) ||
+    inRange("192.88.99.0", 24) ||
+    inRange("192.168.0.0", 16) || // private
+    inRange("198.18.0.0", 15) || // benchmarking
+    inRange("198.51.100.0", 24) ||
+    inRange("203.0.113.0", 24) ||
+    inRange("224.0.0.0", 4) || // multicast
+    inRange("240.0.0.0", 4) // reserved（255.255.255.255 含む）
+  );
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const h = ip.toLowerCase().split("%")[0]; // ゾーンID除去
+  // IPv4-mapped / IPv4-compatible（::ffff:a.b.c.d 等）は埋め込み IPv4 を判定。
+  const mapped = /(?:::ffff:|::)((?:\d{1,3}\.){3}\d{1,3})$/i.exec(h);
+  if (mapped) return isPrivateIpv4(mapped[1]);
+  if (h === "::" || h === "::1") return true; // unspecified / loopback
+  if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb"))
+    return true; // fe80::/10 link-local
+  if (/^f[cd]/.test(h)) return true; // fc00::/7 unique local
+  if (h.startsWith("ff")) return true; // ff00::/8 multicast
   return false;
 }
 
-export class OgpError extends Error {}
+function isPrivateIp(ip: string): boolean {
+  return ip.includes(":") ? isPrivateIpv6(ip) : isPrivateIpv4(ip);
+}
+
+// ホスト名を DNS 解決し、解決された全 IP が公開アドレスであることを確認する。
+// 1つでもプライベート/予約帯があれば拒否（DNS リバインディング対策）。
+async function assertPublicHost(hostname: string): Promise<void> {
+  if (isBlockedHostname(hostname)) {
+    throw new OgpError("このURLは取得できません");
+  }
+  let addrs: { address: string }[];
+  try {
+    addrs = await lookup(hostname, { all: true });
+  } catch {
+    throw new OgpError("ホスト名を解決できませんでした");
+  }
+  if (addrs.length === 0 || addrs.some((a) => isPrivateIp(a.address))) {
+    throw new OgpError("このURLは取得できません");
+  }
+}
+
+// SSRF 安全な fetch。各ホップでホストを再検証し、リダイレクトは手動追従する。
+async function safeFetch(
+  startUrl: string,
+  init: RequestInit & { maxRedirects?: number } = {}
+): Promise<Response> {
+  const { maxRedirects = 4, ...rest } = init;
+  let current = startUrl;
+  for (let i = 0; i <= maxRedirects; i++) {
+    let parsed: URL;
+    try {
+      parsed = new URL(current);
+    } catch {
+      throw new OgpError("URLの形式が正しくありません");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new OgpError("http/https のURLのみ対応しています");
+    }
+    await assertPublicHost(parsed.hostname);
+
+    const res = await fetch(parsed.toString(), { ...rest, redirect: "manual" });
+
+    // リダイレクト以外はそのまま返す。
+    if (res.status < 300 || res.status >= 400) return res;
+    const location = res.headers.get("location");
+    if (!location) return res;
+    // 次のホップへ（相対 Location を絶対化）。bodyを破棄。
+    await res.body?.cancel().catch(() => {});
+    current = new URL(location, parsed).toString();
+  }
+  throw new OgpError("リダイレクトが多すぎます");
+}
 
 // YouTube URL から動画IDを抽出（watch / youtu.be / shorts / embed / live）。
 function youTubeId(u: URL): string | null {
@@ -141,18 +244,16 @@ export async function fetchOgp(rawUrl: string): Promise<Ogp> {
   if (ytId) {
     return fetchYouTube(parsed, ytId);
   }
-  if (isBlockedHost(parsed.hostname)) {
-    throw new OgpError("このURLは取得できません");
-  }
 
+  // SSRF 対策: DNS 解決して全 IP を検証し、リダイレクトは手動追従で各ホップ再検証する。
   let res: Response;
   try {
-    res = await fetch(parsed.toString(), {
-      redirect: "follow",
+    res = await safeFetch(parsed.toString(), {
       signal: AbortSignal.timeout(7000),
       headers: { "User-Agent": "HarborBot/1.0 (+OGP)" },
     });
-  } catch {
+  } catch (e) {
+    if (e instanceof OgpError) throw e;
     throw new OgpError("ページを取得できませんでした");
   }
   if (!res.ok) {

@@ -16,7 +16,7 @@
 
 | # | 深刻度 | 項目 | 場所 |
 |---|---|---|---|
-| 1 | **High** | OGP 取得の SSRF（DNS 未解決ブロックリスト・リダイレクト追従） | `lib/ogp.ts` |
+| 1 | ~~**High**~~ ✅ **修正済 (2026-06-15)** | OGP 取得の SSRF（DNS 未解決ブロックリスト・リダイレクト追従） | `lib/ogp.ts` |
 | 2 | Medium | 投げ銭がオンチェーン未検証で記録（金額の偽装表示） | `app/api/tips/route.ts` |
 | 3 | Medium | 購入/投げ銭が支払者本人に紐付かない（公開 txHash の横取り） | `app/api/purchases/route.ts`, `tips` |
 | 4 | Medium | レート制限が全く無い（メール爆撃・DB 肥大・SSRF 増幅） | 全 API |
@@ -50,6 +50,17 @@
 - ホスト名を**実際に DNS 解決**し、得られた**全 IP**を `ipaddr.js` 等でプライベート/ループバック/リンクローカル/
   ユニークローカル（IPv6 含む）判定して拒否。解決した IP に直接接続して TOCTOU を避ける（pin）。
 - 許可スキームを https のみに絞る運用も検討。
+
+**対応状況（2026-06-15 修正済み）**: `lib/ogp.ts` に外部依存なし（`node:dns/promises`）で以下を実装。
+- `assertPublicHost()`: ホスト名を `lookup(host,{all:true})` で**全 IP 解決**し、IPv4/IPv6 の
+  プライベート・ループバック・リンクローカル(169.254 含む)・ULA・CGNAT・予約/マルチキャスト帯・
+  IPv4-mapped(`::ffff:`) を判定して拒否。`localhost`/`.local`/`.internal` は DNS 前に早期拒否。
+- `safeFetch()`: `redirect: "manual"` で**リダイレクトを手動追従**し、各ホップで scheme と
+  `assertPublicHost()` を**再検証**（最大 4 ホップ）。これにより公開URL→内部IPへの 30x 回避を遮断。
+- 判定ロジックは 15 ケース（メタデータ 169.254.169.254 / 各プライベート帯 / v4-mapped / v6 ULA・LL /
+  公開 IPv4・IPv6）でユニットテスト済み。typecheck / lint OK。
+- 残存リスク（Low）: DNS 解決〜接続間の厳密な rebinding TOCTOU は完全には閉じない（IP pin には
+  カスタム dispatcher が必要）。現実的な攻撃難度は大幅に上昇。YouTube/SMD/レート取得は固定ホストのため対象外。
 
 ---
 
@@ -160,7 +171,7 @@
 
 ## 公開前チェックリスト（優先度順）
 
-1. [ ] **#1 SSRF 修正**（DNS 解決＋全 IP プライベート判定＋リダイレクト manual）— 公開前必須
+1. [x] **#1 SSRF 修正**（DNS 解決＋全 IP プライベート判定＋リダイレクト manual）— ✅ 2026-06-15 完了
 2. [ ] **#3 支払者本人バインド**（signer == 登録 xymAddress）と **#2 投げ銭の検証/確定のみ表示**
 3. [ ] **#4 レート制限**（challenge / reports / ogp / upload）と通報メールの抑制
 4. [ ] **#5 nonce ベース CSP** への移行

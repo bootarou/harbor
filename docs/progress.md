@@ -4,6 +4,17 @@
 
 ---
 
+## セキュリティ修正: OGP 取得の SSRF 対策（High）✅ (2026-06-15)
+- セキュリティレビュー(`docs/security-report.md`)で High と判定した OGP 取得の SSRF を修正
+- 旧: `isBlockedHost()` がホスト名の文字列マッチのみ＋`redirect:"follow"` → DNS リバインディング/リダイレクト経由で内部IP(169.254.169.254 等)へ到達可能
+- 新: `lib/ogp.ts` に外部依存なし(`node:dns/promises`)で実装
+  - `assertPublicHost()`: `lookup(host,{all:true})` で全解決IPを検証し、IPv4/IPv6 のプライベート/ループバック/リンクローカル/ULA/CGNAT/予約・マルチキャスト/IPv4-mapped を拒否。`localhost`/`.local`/`.internal` は DNS 前に早期拒否
+  - `safeFetch()`: `redirect:"manual"` で手動追従し各ホップを再検証(最大4)
+- 検証: IP判定15ケース(メタデータ/各プライベート帯/v4-mapped/v6 ULA・LL/公開IP)ユニットテスト全PASS。typecheck/lint OK
+- 残存(Low): 解決〜接続間の厳密な rebinding TOCTOU は IP pin 未実装のため完全には閉じない
+
+---
+
 ## 改善: 画像保存時のリサイズ・圧縮（sharp 導入）✅ (2026-06-15)
 - これまで `lib/storage.ts saveImage()` は形式チェックと5MB上限の**拒否**のみで、リサイズ/圧縮は未実施だった
 - `sharp` を追加し、保存前に **長辺 2000px 以内へリサイズ（拡大はしない `withoutEnlargement`）＋形式ごとに再エンコード圧縮**（jpeg q82/mozjpeg・png compressionLevel9・webp q82・gif）
