@@ -62,6 +62,12 @@ export default async function NotificationsPage() {
     }),
   ]);
 
+  // このページを開いた時点で「確認済み」にする（ヘッダーの未読バッジをクリア）。
+  await prisma.user.update({
+    where: { id: me },
+    data: { notificationsReadAt: new Date() },
+  });
+
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <h1 className="mb-8 text-2xl font-bold">通知</h1>

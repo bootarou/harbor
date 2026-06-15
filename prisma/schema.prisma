@@ -34,6 +34,7 @@ model User {
   xymAddress      String? // 受取アドレス（通常 symbolAddress と同一）
   tokushoho       String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
   salesTerms      String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
+  notificationsReadAt DateTime? // 通知を最後に確認した時刻（未読数の算出に使用）
   createdAt       DateTime @default(now())
 
   posts     Post[]

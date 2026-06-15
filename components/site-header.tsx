@@ -1,17 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 
+function NotificationBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-4 text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 export function SiteHeader() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   const pathname = usePathname();
 
   // ナビ項目を一元管理し、デスクトップ（横並び）とモバイル（ドロワー）で共用する。
   const close = () => setOpen(false);
+
+  const userId = session?.user?.id;
+
+  // 未読通知数を取得。ログイン中は画面遷移ごとに再取得し、
+  // /notifications を開くと（サーバー側で既読化されるため）0 に戻る。
+  useEffect(() => {
+    if (!userId) return;
+    let active = true;
+    fetch("/api/notifications/unread-count")
+      .then((r) => (r.ok ? r.json() : { count: 0 }))
+      .then((d: { count?: number }) => {
+        if (active) setUnread(typeof d.count === "number" ? d.count : 0);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [userId, pathname]);
 
   const links = session?.user
     ? [
@@ -44,6 +72,9 @@ export function SiteHeader() {
               {links.map((l) => (
                 <Link key={l.href} href={l.href} className="hover:underline">
                   {l.label}
+                  {l.href === "/notifications" && (
+                    <NotificationBadge count={unread} />
+                  )}
                 </Link>
               ))}
               <button
@@ -116,6 +147,9 @@ export function SiteHeader() {
                   className="rounded-md py-2 hover:underline"
                 >
                   {l.label}
+                  {l.href === "/notifications" && (
+                    <NotificationBadge count={unread} />
+                  )}
                 </Link>
               ))}
               <button
