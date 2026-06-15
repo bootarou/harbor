@@ -4,15 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   decryptPrivateKey,
+  WebCryptoUnavailableError,
   WrongPassphraseError,
   type EncryptedWallet,
 } from "@/lib/wallet/crypto";
 import {
-  clearStoredWallet,
-  getStoredWallet,
+  getActiveAddress,
+  listWallets,
+  removeWallet,
   saveStoredWallet,
+  setActiveAddress,
 } from "@/lib/wallet/storage";
+import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import { fetchXymBalance } from "@/lib/wallet/symbol";
+import { shortAddress } from "@/lib/did";
 import { formatXym } from "@/lib/format";
 import { CreateWallet } from "@/components/wallet/create-wallet";
 import { RestoreWallet } from "@/components/wallet/restore-wallet";
@@ -24,50 +29,61 @@ export function WalletManager({
 }: {
   serverAddress: string | null;
 }) {
+  const router = useRouter();
   const [loaded, setLoaded] = useState(false);
-  const [wallet, setWallet] = useState<EncryptedWallet | null>(null);
+  const [wallets, setWallets] = useState<EncryptedWallet[]>([]);
+  const [activeAddr, setActiveAddr] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // localStorage はクライアントでのみ読めるため、マウント後に同期する
-    // （SSR とのハイドレーション不整合を避けるため、初期表示は「読み込み中」固定）。
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setWallet(getStoredWallet());
-    setLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
+  const refresh = useCallback(() => {
+    setWallets(listWallets());
+    setActiveAddr(getActiveAddress());
   }, []);
 
-  // 作成/復元の完了。暗号化データを localStorage に保存し、公開アドレスのみサーバーへ送る。
-  const handleComplete = useCallback(async (enc: EncryptedWallet) => {
-    saveStoredWallet(enc);
-    setWallet(enc);
-    setMode("idle");
-    setSyncError(null);
-    try {
-      const res = await fetch("/api/wallet/address", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // 送信するのは公開アドレスのみ。
-        body: JSON.stringify({ address: enc.address }),
-      });
-      if (!res.ok) {
+  useEffect(() => {
+    // localStorage はクライアントでのみ読めるため、マウント後に同期する。
+    /* eslint-disable react-hooks/set-state-in-effect */
+    refresh();
+    setLoaded(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [refresh]);
+
+  // 作成/復元の完了。暗号化データを localStorage に保存（追加＆アクティブ化）し、公開アドレスのみサーバーへ送る。
+  const handleComplete = useCallback(
+    async (enc: EncryptedWallet) => {
+      saveStoredWallet(enc);
+      refresh();
+      setMode("idle");
+      setSyncError(null);
+      try {
+        const res = await fetch("/api/wallet/address", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: enc.address }),
+        });
+        if (!res.ok) {
+          setSyncError(
+            "ウォレットは保存しましたが、公開アドレスのサーバー登録に失敗しました。"
+          );
+        }
+      } catch {
         setSyncError(
           "ウォレットは保存しましたが、公開アドレスのサーバー登録に失敗しました。"
         );
       }
-    } catch {
-      setSyncError(
-        "ウォレットは保存しましたが、公開アドレスのサーバー登録に失敗しました。"
-      );
-    }
-  }, []);
+    },
+    [refresh]
+  );
 
   if (!loaded) {
     return <p className="text-sm text-gray-500">読み込み中...</p>;
   }
 
-  if (!wallet) {
+  const active = wallets.find((w) => w.address === activeAddr) ?? null;
+
+  // ウォレット未所持: 最初の1つを作成/復元。
+  if (wallets.length === 0) {
     return (
       <div className="flex flex-col gap-4">
         {serverAddress && (
@@ -97,50 +113,224 @@ export function WalletManager({
           </div>
         )}
         {mode === "create" && (
-          <CreateWallet
-            onComplete={handleComplete}
-            onCancel={() => setMode("idle")}
-          />
+          <CreateWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
         )}
         {mode === "restore" && (
-          <RestoreWallet
-            onComplete={handleComplete}
-            onCancel={() => setMode("idle")}
-          />
+          <RestoreWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
         )}
       </div>
     );
   }
 
   return (
-    <ExistingWallet
-      wallet={wallet}
-      serverAddress={serverAddress}
-      syncError={syncError}
-      onDeleted={() => {
-        setWallet(null);
-        setMode("idle");
-      }}
-    />
+    <div className="flex flex-col gap-6">
+      {syncError && (
+        <p className="rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200">
+          {syncError}
+        </p>
+      )}
+
+      {/* アカウント一覧・切替 */}
+      <AccountsPanel
+        wallets={wallets}
+        activeAddr={activeAddr}
+        serverAddress={serverAddress}
+        onChanged={() => {
+          refresh();
+          router.refresh();
+        }}
+        onAdd={(m) => setMode(m)}
+      />
+
+      {/* 追加（作成/復元） */}
+      {mode === "create" && (
+        <CreateWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
+      )}
+      {mode === "restore" && (
+        <RestoreWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
+      )}
+
+      {/* アクティブなウォレットの詳細 */}
+      {active && (
+        <ExistingWallet
+          key={active.address}
+          wallet={active}
+          serverAddress={serverAddress}
+        />
+      )}
+    </div>
+  );
+}
+
+function AccountsPanel({
+  wallets,
+  activeAddr,
+  serverAddress,
+  onChanged,
+  onAdd,
+}: {
+  wallets: EncryptedWallet[];
+  activeAddr: string | null;
+  serverAddress: string | null;
+  onChanged: () => void;
+  onAdd: (mode: "create" | "restore") => void;
+}) {
+  const [switchTarget, setSwitchTarget] = useState<string | null>(null);
+  const [passphrase, setPassphrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function doSwitch(address: string) {
+    setError(null);
+    const wallet = wallets.find((w) => w.address === address);
+    if (!wallet) return;
+    setBusy(true);
+    try {
+      // 切替はセッションも合わせるため再ログイン（署名する鍵とログイン中アカウントを一致させる）。
+      const pk = await decryptPrivateKey(wallet, passphrase);
+      const res = await didLoginWithPrivateKey(pk);
+      if (!res.ok) {
+        setError(res.error ?? "切替に失敗しました");
+        return;
+      }
+      setActiveAddress(address);
+      setPassphrase("");
+      setSwitchTarget(null);
+      onChanged();
+    } catch (e) {
+      setError(
+        e instanceof WrongPassphraseError || e instanceof WebCryptoUnavailableError
+          ? e.message
+          : "切替に失敗しました"
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function doRemove(address: string) {
+    const ok = window.confirm(
+      "この端末からこのアカウントのウォレットを削除します。リカバリーフレーズ/秘密鍵がないと復元できません。よろしいですか？"
+    );
+    if (!ok) return;
+    removeWallet(address);
+    onChanged();
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold">アカウント</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onAdd("create")}
+            className="rounded-md border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
+          >
+            ＋作成
+          </button>
+          <button
+            type="button"
+            onClick={() => onAdd("restore")}
+            className="rounded-md border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
+          >
+            ＋復元/インポート
+          </button>
+        </div>
+      </div>
+
+      <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
+        {wallets.map((w) => {
+          const isActive = w.address === activeAddr;
+          return (
+            <li key={w.address} className="flex flex-col gap-2 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 font-mono text-sm">
+                  {shortAddress(w.address)}
+                  {isActive && (
+                    <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950 dark:text-green-200">
+                      使用中
+                    </span>
+                  )}
+                  {serverAddress === w.address && !isActive && (
+                    <span className="ml-2 text-[11px] text-gray-400">登録済み</span>
+                  )}
+                </span>
+                <div className="flex shrink-0 gap-2">
+                  {!isActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSwitchTarget(w.address);
+                        setPassphrase("");
+                        setError(null);
+                      }}
+                      className="rounded-md border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
+                    >
+                      切替
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => doRemove(w.address)}
+                    className="rounded-md px-2 py-1 text-xs text-red-600 dark:text-red-400"
+                  >
+                    削除
+                  </button>
+                </div>
+              </div>
+
+              {switchTarget === w.address && (
+                <div className="flex flex-col gap-2 rounded-md bg-gray-50 p-2 dark:bg-gray-900">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    このアカウントに切り替えるにはパスワードを入力してください（再ログインします）。
+                  </p>
+                  {error && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={passphrase}
+                      onChange={(e) => setPassphrase(e.target.value)}
+                      placeholder="ウォレットパスワード"
+                      className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => doSwitch(w.address)}
+                      disabled={busy || passphrase.length === 0}
+                      className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+                    >
+                      {busy ? "..." : "切替"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSwitchTarget(null)}
+                      className="text-xs underline"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
 function ExistingWallet({
   wallet,
   serverAddress,
-  syncError,
-  onDeleted,
 }: {
   wallet: EncryptedWallet;
   serverAddress: string | null;
-  syncError: string | null;
-  onDeleted: () => void;
 }) {
   const router = useRouter();
-  // この端末のウォレットの公開アドレスがサーバーに登録済みか。
-  const [addrSynced, setAddrSynced] = useState(
-    serverAddress === wallet.address
-  );
+  const [addrSynced, setAddrSynced] = useState(serverAddress === wallet.address);
   const [addrSyncing, setAddrSyncing] = useState(false);
   const [addrSyncError, setAddrSyncError] = useState<string | null>(null);
 
@@ -153,9 +343,7 @@ function ExistingWallet({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address: wallet.address }),
       });
-      if (!res.ok) {
-        throw new Error("登録に失敗しました");
-      }
+      if (!res.ok) throw new Error("登録に失敗しました");
       setAddrSynced(true);
       router.refresh();
     } catch {
@@ -167,13 +355,6 @@ function ExistingWallet({
     }
   }, [wallet.address, router]);
 
-  // 未登録/不一致なら自動で登録を試みる（投げ銭を受け取れるようにするため）。初回マウント時のみ。
-  useEffect(() => {
-    if (addrSynced) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void saveAddress();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [unlockError, setUnlockError] = useState<string | null>(null);
@@ -205,7 +386,7 @@ function ExistingWallet({
       setPassphrase("");
     } catch (e) {
       setUnlockError(
-        e instanceof WrongPassphraseError
+        e instanceof WrongPassphraseError || e instanceof WebCryptoUnavailableError
           ? e.message
           : "アンロックに失敗しました"
       );
@@ -219,25 +400,12 @@ function ExistingWallet({
     setRevealKey(false);
   }
 
-  function remove() {
-    const ok = window.confirm(
-      "この端末からウォレットを削除します。リカバリーフレーズがないと復元できません。よろしいですか？"
-    );
-    if (!ok) return;
-    clearStoredWallet();
-    onDeleted();
-  }
-
   return (
     <div className="flex flex-col gap-5">
-      {syncError && (
-        <p className="rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200">
-          {syncError}
-        </p>
-      )}
-
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-        <p className="text-xs text-gray-500 dark:text-gray-400">公開アドレス</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          使用中アカウントの公開アドレス
+        </p>
         <p className="mt-1 break-all font-mono text-sm">{wallet.address}</p>
         {addrSynced ? (
           <p className="mt-2 text-xs text-green-700 dark:text-green-300">
@@ -248,7 +416,7 @@ function ExistingWallet({
             <p className="text-xs text-yellow-700 dark:text-yellow-300">
               {addrSyncing
                 ? "公開アドレスをサーバーに登録中..."
-                : "公開アドレスがサーバー未登録です。登録すると投げ銭を受け取れます。"}
+                : "このアカウントの公開アドレスはサーバー未登録です。使用中アカウントとして登録すると投げ銭を受け取れます。"}
             </p>
             {!addrSyncing && (
               <button
@@ -260,9 +428,7 @@ function ExistingWallet({
               </button>
             )}
             {addrSyncError && (
-              <p className="text-xs text-red-600 dark:text-red-400">
-                {addrSyncError}
-              </p>
+              <p className="text-xs text-red-600 dark:text-red-400">{addrSyncError}</p>
             )}
           </div>
         )}
@@ -284,18 +450,16 @@ function ExistingWallet({
           {balance === null ? "—" : `${formatXym(balance)} XYM`}
         </p>
         {balanceError && (
-          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-            {balanceError}
-          </p>
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{balanceError}</p>
         )}
       </div>
 
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-        <p className="text-sm font-semibold">ウォレットのアンロック</p>
+        <p className="text-sm font-semibold">ウォレットのアンロック（秘密鍵の確認）</p>
         {privateKey ? (
           <div className="mt-3 flex flex-col gap-3">
             <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
-              アンロック済みです。（送金機能は Phase 6 で追加予定）
+              アンロック済みです。秘密鍵はこの端末のメモリ上のみに保持しています。
             </p>
             <div className="flex flex-wrap gap-3">
               <button
@@ -349,14 +513,6 @@ function ExistingWallet({
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        onClick={remove}
-        className="self-start text-sm text-red-600 underline dark:text-red-400"
-      >
-        この端末からウォレットを削除
-      </button>
     </div>
   );
 }

@@ -3,8 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
-import { getStoredWallet } from "@/lib/wallet/storage";
+import {
+  decryptPrivateKey,
+  WebCryptoUnavailableError,
+  WrongPassphraseError,
+  type EncryptedWallet,
+} from "@/lib/wallet/crypto";
+import {
+  getActiveAddress,
+  getWalletByAddress,
+  listWallets,
+  setActiveAddress,
+} from "@/lib/wallet/storage";
 import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import { shortAddress } from "@/lib/did";
 
@@ -13,7 +23,8 @@ export function DidLogin() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
 
-  const [address, setAddress] = useState<string | null>(null);
+  const [wallets, setWallets] = useState<EncryptedWallet[]>([]);
+  const [selected, setSelected] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,8 +33,9 @@ export function DidLogin() {
   useEffect(() => {
     // localStorage はクライアントでのみ参照可能なため、マウント後に同期する。
     /* eslint-disable react-hooks/set-state-in-effect */
-    const w = getStoredWallet();
-    setAddress(w?.address ?? null);
+    const list = listWallets();
+    setWallets(list);
+    setSelected(getActiveAddress() ?? list[0]?.address ?? "");
     setLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -31,7 +43,7 @@ export function DidLogin() {
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const wallet = getStoredWallet();
+    const wallet = getWalletByAddress(selected);
     if (!wallet) return;
     setBusy(true);
     try {
@@ -41,12 +53,14 @@ export function DidLogin() {
         setError(res.error ?? "ログインに失敗しました");
         return;
       }
+      setActiveAddress(selected);
       setPassphrase("");
       router.push(callbackUrl);
       router.refresh();
     } catch (err) {
       setError(
-        err instanceof WrongPassphraseError
+        err instanceof WrongPassphraseError ||
+          err instanceof WebCryptoUnavailableError
           ? err.message
           : "ログインに失敗しました"
       );
@@ -59,7 +73,7 @@ export function DidLogin() {
     return <p className="text-sm text-gray-500">読み込み中...</p>;
   }
 
-  if (!address) {
+  if (wallets.length === 0) {
     return (
       <div className="flex flex-col gap-4">
         <p className="rounded-md bg-gray-50 px-3 py-3 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
@@ -83,10 +97,29 @@ export function DidLogin() {
 
   return (
     <form onSubmit={login} className="flex flex-col gap-4">
-      <p className="text-sm text-gray-600 dark:text-gray-400">
-        ウォレット:{" "}
-        <span className="font-mono">{shortAddress(address)}</span>
-      </p>
+      {/* アカウント選択（複数保持時） */}
+      {wallets.length > 1 ? (
+        <label className="flex flex-col gap-1 text-sm">
+          アカウントを選択
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900"
+          >
+            {wallets.map((w) => (
+              <option key={w.address} value={w.address}>
+                {shortAddress(w.address)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          ウォレット:{" "}
+          <span className="font-mono">{shortAddress(selected)}</span>
+        </p>
+      )}
+
       {error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {error}
@@ -114,10 +147,10 @@ export function DidLogin() {
       </button>
       <div className="flex justify-between text-xs">
         <Link href="/register?mode=create" className="underline">
-          新しいアドレスを作成
+          新しいアカウントを作成
         </Link>
         <Link href="/register?mode=import" className="underline">
-          フレーズ／秘密鍵で復元
+          別のアカウントを追加
         </Link>
       </div>
     </form>
