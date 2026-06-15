@@ -14,11 +14,18 @@ export default async function FeedPage() {
   }
   const me = session.user.id;
 
-  const following = await prisma.follow.findMany({
+  // フォロー中のユーザー（新しくフォローした順）。
+  const follows = await prisma.follow.findMany({
     where: { followerId: me },
-    select: { followingId: true },
+    orderBy: { createdAt: "desc" },
+    select: {
+      following: {
+        select: { id: true, displayName: true, avatarUrl: true },
+      },
+    },
   });
-  const followingIds = following.map((f) => f.followingId);
+  const followingUsers = follows.map((f) => f.following);
+  const followingIds = followingUsers.map((u) => u.id);
 
   const posts = followingIds.length
     ? await prisma.post.findMany({
@@ -47,39 +54,73 @@ export default async function FeedPage() {
       })
     : [];
 
-  return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10">
-      <h1 className="mb-6 text-2xl font-bold">フォロー中の新着</h1>
-
-      {followingIds.length === 0 ? (
+  if (followingIds.length === 0) {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+        <h1 className="mb-6 text-2xl font-bold">フォロー中</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
           まだ誰もフォローしていません。記事の著者ページからフォローできます。{" "}
           <Link href="/" className="underline">
             記事を探す
           </Link>
         </p>
-      ) : posts.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          フォロー中のユーザーの公開記事はまだありません。
-        </p>
-      ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={{
-                ...post,
-                priceAmount:
-                  post.priceAmount != null ? Number(post.priceAmount) : null,
-              }}
-              tip={{
-                total: post.tips.reduce((s, t) => s + Number(t.amount), 0),
-                count: post.tips.length,
-              }}
-            />
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-6xl px-6 py-10">
+      {/* ユーザー（横スクロール） */}
+      <section className="mb-10">
+        <h2 className="mb-4 text-xl font-bold">ユーザー</h2>
+        <ul className="-mx-1 flex gap-4 overflow-x-auto px-1 pb-2">
+          {followingUsers.map((u) => (
+            <li key={u.id} className="shrink-0">
+              <Link
+                href={`/users/${u.id}`}
+                className="flex w-20 flex-col items-center gap-1.5 text-center"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={u.avatarUrl || "/avatar-placeholder.svg"}
+                  alt=""
+                  className="h-16 w-16 rounded-full border border-gray-200 object-cover dark:border-gray-700"
+                />
+                <span className="line-clamp-2 text-xs text-gray-700 dark:text-gray-300">
+                  {u.displayName}
+                </span>
+              </Link>
+            </li>
           ))}
         </ul>
-      )}
+      </section>
+
+      {/* フォロー中の新着 */}
+      <section>
+        <h2 className="mb-4 text-xl font-bold">フォロー中の新着</h2>
+        {posts.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            フォロー中のユーザーの公開記事はまだありません。
+          </p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={{
+                  ...post,
+                  priceAmount:
+                    post.priceAmount != null ? Number(post.priceAmount) : null,
+                }}
+                tip={{
+                  total: post.tips.reduce((s, t) => s + Number(t.amount), 0),
+                  count: post.tips.length,
+                }}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
     </main>
   );
 }
