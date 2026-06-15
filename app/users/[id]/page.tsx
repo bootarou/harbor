@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { livePostWhere } from "@/lib/posts";
 import { FollowButton } from "@/components/follow-button";
 
 function formatDate(d: Date): string {
@@ -44,7 +45,7 @@ export default async function UserProfilePage({
         createdAt: true,
         _count: { select: { followers: true, following: true } },
         posts: {
-          where: { published: true },
+          where: livePostWhere(),
           orderBy: { createdAt: "desc" },
           select: { id: true, title: true, createdAt: true },
         },

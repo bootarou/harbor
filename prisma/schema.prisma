@@ -122,6 +122,7 @@ model Post {
   ogpImageUrl    String?
   ogpSiteName    String?
   tipsEnabled    Boolean @default(true) // URL投稿の投げ銭ON/OFF（通常記事は常に可）
+  viewCount      Int     @default(0) // 閲覧数（インプレッション）
 
   // 販売公開（有料記事）関連
   paid          Boolean  @default(false)

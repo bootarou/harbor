@@ -28,9 +28,13 @@ export default async function DashboardPage() {
       id: true,
       title: true,
       published: true,
+      publishAt: true,
       updatedAt: true,
+      viewCount: true,
     },
   });
+  // eslint-disable-next-line react-hooks/purity -- サーバーコンポーネントでのリクエスト時刻
+  const now = Date.now();
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
@@ -66,17 +70,33 @@ export default async function DashboardPage() {
             >
               <div className="min-w-0">
                 <p className="truncate font-medium">{post.title}</p>
-                <p className="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <span
-                    className={`rounded px-1.5 py-0.5 ${
-                      post.published
-                        ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    }`}
-                  >
-                    {post.published ? "公開中" : "下書き"}
-                  </span>
-                  更新: {formatDate(post.updatedAt)}
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  {(() => {
+                    const scheduled =
+                      post.published &&
+                      post.publishAt !== null &&
+                      post.publishAt.getTime() > now;
+                    if (!post.published) {
+                      return (
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          下書き
+                        </span>
+                      );
+                    }
+                    if (scheduled) {
+                      return (
+                        <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+                          予約（{formatDate(post.publishAt!)} 公開）
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 dark:bg-green-900 dark:text-green-200">
+                        公開中
+                      </span>
+                    );
+                  })()}
+                  更新: {formatDate(post.updatedAt)}・👁 {post.viewCount}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2 text-sm">

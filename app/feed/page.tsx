@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostCard } from "@/components/post-card";
+import { livePostWhere } from "@/lib/posts";
 
 export const metadata = { title: "フォロー中" };
 
@@ -21,7 +22,7 @@ export default async function FeedPage() {
 
   const posts = followingIds.length
     ? await prisma.post.findMany({
-        where: { published: true, authorId: { in: followingIds } },
+        where: { AND: [livePostWhere(), { authorId: { in: followingIds } }] },
         orderBy: { createdAt: "desc" },
         take: 30,
         select: {
@@ -31,6 +32,7 @@ export default async function FeedPage() {
           coverImage: true,
           tags: true,
           createdAt: true,
+          viewCount: true,
           paid: true,
           priceAmount: true,
           priceCurrency: true,

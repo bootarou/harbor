@@ -4,6 +4,16 @@
 
 ---
 
+## 改善: 画像保存時のリサイズ・圧縮（sharp 導入）✅ (2026-06-15)
+- これまで `lib/storage.ts saveImage()` は形式チェックと5MB上限の**拒否**のみで、リサイズ/圧縮は未実施だった
+- `sharp` を追加し、保存前に **長辺 2000px 以内へリサイズ（拡大はしない `withoutEnlargement`）＋形式ごとに再エンコード圧縮**（jpeg q82/mozjpeg・png compressionLevel9・webp q82・gif）
+- アニメーション GIF は `{ animated: true }` でフレームを保持したままリサイズ
+- 入力上限を 5MB → **25MB（`MAX_UPLOAD_BYTES`、DoS 対策のハードキャップ）** に引き上げ。超過は従来どおり拒否。`MAX_IMAGE_BYTES` は後方互換エイリアスとして維持
+- sharp が処理できない入力（破損等）は `ImageValidationError` にラップして 400 を返す（アップロード API はそのまま）
+- 検証: 5000×4000 JPEG → 2000×1600 へ縮小・圧縮、小さい画像(300×200)は非拡大、を sharp 実コードで確認。typecheck / lint OK
+
+---
+
 ## 追加機能: 記事の通報（メール通知）✅ (2026-06-14)
 - リアクション欄（「この記事はどうでしたか？」）に**控えめな通報ボタン**（薄い文字色）を追加（`components/report-button.tsx`、理由は任意入力）
 - `POST /api/reports`（要ログイン）: `Report` 記録（同一ユーザー重複は1件）→ **通知先メールへ詳細送信**
@@ -11,6 +21,24 @@
 - 送信は SMTP（`lib/email.ts` + nodemailer、`SMTP_*` env）。**未設定時は実送信せずサーバーログに出力**（本番は SMTP 設定が必要）
 - `Report` モデル追加（postId/reporterUserId/reason、unique(postId,reporterUserId)）
 - 検証（実DB）: 未ログイン401 / 通報200・記録 / 重複は alreadyReported / メール本文（宛先 bootarouapp@gmail.com・詳細）をログで確認 / 詳細ページにボタン表示。typecheck/lint OK
+
+---
+
+## 修正: 公開日時（予約投稿）が一覧/フィード/プロフィールで効いていなかった ✅ (2026-06-14)
+- 一覧クエリが `published:true` のみで `publishAt` 未考慮だったため、未来日時の予約投稿が公開されていた
+- `lib/posts.ts` `livePostWhere()`（published && publishAt が null/現在以前）を作成し、トップ一覧・タグ集計・フィード・ユーザープロフィールに適用
+- 記事詳細の `generateMetadata` も live 判定でガード（予約投稿の本文抜粋がメタに漏れないように）。詳細本体は従来どおり著者以外404
+- マイ記事に「予約（日時）」バッジ表示
+- 検証: 未来=一覧非表示・詳細404(本文/メタ漏れなし)、過去/即時=表示。typecheck/lint OK
+
+---
+
+## 追加機能: 記事のインプレッション（ビュー）カウント ✅ (2026-06-14)
+- `Post.viewCount Int @default(0)` を追加
+- `POST /api/posts/[id]/view` で加算（公開記事のみ・著者本人の閲覧は除外）
+- `components/view-tracker.tsx`（詳細ページで1回 fire-and-forget。**同一ブラウザの再訪は localStorage で重複抑制**）
+- 表示: 記事詳細・一覧/フィードのカード・マイ記事一覧に「👁 N」
+- 検証（実DB）: 匿名閲覧で加算 / 著者の閲覧は非加算 / 下書きは非加算 / 詳細に👁表示。typecheck/lint OK
 
 ---
 

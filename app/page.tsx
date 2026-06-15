@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PostCard } from "@/components/post-card";
+import { livePostWhere } from "@/lib/posts";
 
 const PAGE_SIZE = 12;
 
@@ -24,14 +25,18 @@ export default async function Home({
   const q = sp.q?.trim() ?? "";
   const tag = sp.tag?.trim() ?? "";
 
-  const where: Prisma.PostWhereInput = { published: true };
-  if (tag) where.tags = { has: tag };
+  const conds: Prisma.PostWhereInput[] = [livePostWhere()];
+  if (tag) conds.push({ tags: { has: tag } });
   if (q) {
-    where.OR = [
-      { title: { contains: q, mode: "insensitive" } },
-      { contentHTML: { contains: q, mode: "insensitive" } },
-    ];
+    conds.push({
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { contentHTML: { contains: q, mode: "insensitive" } },
+        { comment: { contains: q, mode: "insensitive" } },
+      ],
+    });
   }
+  const where: Prisma.PostWhereInput = { AND: conds };
 
   const [total, posts, tagRows] = await Promise.all([
     prisma.post.count({ where }),
@@ -47,6 +52,7 @@ export default async function Home({
         coverImage: true,
         tags: true,
         createdAt: true,
+        viewCount: true,
         paid: true,
         priceAmount: true,
         priceCurrency: true,
@@ -58,9 +64,9 @@ export default async function Home({
         author: { select: { displayName: true, avatarUrl: true } },
       },
     }),
-    // タグナビ用（公開記事のタグを集計）
+    // タグナビ用（公開中の記事のタグを集計）
     prisma.post.findMany({
-      where: { published: true },
+      where: livePostWhere(),
       select: { tags: true },
     }),
   ]);

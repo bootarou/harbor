@@ -8,6 +8,7 @@ import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
+import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
 import { formatXym } from "@/lib/format";
@@ -29,9 +30,14 @@ export async function generateMetadata({
       contentHTML: true,
       coverImage: true,
       published: true,
+      publishAt: true,
     },
   });
-  if (!post || !post.published) {
+  // 未公開・予約（公開日時が未来）の記事はメタ情報を出さない（本文抜粋の漏えい防止）。
+  const isLive =
+    post?.published &&
+    (!post.publishAt || post.publishAt.getTime() <= Date.now());
+  if (!post || !isLive) {
     return { title: "記事" };
   }
   const description = htmlToText(post.contentHTML, 120);
@@ -82,6 +88,7 @@ export default async function PostDetailPage({
       ogpImageUrl: true,
       ogpSiteName: true,
       tipsEnabled: true,
+      viewCount: true,
       paid: true,
       paidHtml: true,
       priceAmount: true,
@@ -180,6 +187,7 @@ export default async function PostDetailPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
+      <ViewTracker postId={post.id} />
       <nav className="mb-6 text-sm">
         <Link href="/" className="text-gray-500 hover:underline dark:text-gray-400">
           ← 記事一覧へ戻る
@@ -202,6 +210,7 @@ export default async function PostDetailPage({
             </span>
           )}
           {post.author.displayName}・{formatDate(post.createdAt)}
+          <span className="text-gray-400">👁 {post.viewCount}</span>
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             💴 {formatXym(tipTotal)} XYM・{tipCount}件
           </span>
