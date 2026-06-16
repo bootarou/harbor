@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { commentSchema } from "@/lib/validations";
+import { notify } from "@/lib/notifications";
 
 export type CommentFormState = {
   error?: string;
@@ -35,7 +36,7 @@ export async function addComment(
 
   const post = await prisma.post.findUnique({
     where: { id: postId },
-    select: { published: true, authorId: true },
+    select: { published: true, authorId: true, title: true },
   });
   if (!post) {
     return { error: "記事が見つかりません" };
@@ -51,6 +52,22 @@ export async function addComment(
   } catch (error) {
     console.error("addComment error", error);
     return { error: "コメントの投稿に失敗しました" };
+  }
+
+  // 著者へ通知（自分の記事への自分のコメントは除く）。
+  if (post.authorId !== session.user.id) {
+    const me = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { displayName: true },
+    });
+    await notify({
+      userId: post.authorId,
+      type: "comment",
+      actorId: session.user.id,
+      actorName: me?.displayName ?? null,
+      postId,
+      postTitle: post.title,
+    });
   }
 
   revalidatePath(`/posts/${postId}`);

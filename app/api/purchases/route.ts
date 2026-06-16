@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { purchaseSchema } from "@/lib/validations";
 import { verifyPurchaseTx } from "@/lib/purchases/verify";
 import { fetchXymJpyRate } from "@/lib/rates";
+import { notify } from "@/lib/notifications";
 
 // 有料記事の購入記録。クライアントが署名・アナウンスした送金(txHash)を、
 // サーバーがノードで検証してから記録する（運営は送金を預からない）。
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
       priceAmount: true,
       priceCurrency: true,
       sellerAddress: true,
+      authorId: true,
+      title: true,
     },
   });
   if (!post || !post.paid || !post.sellerAddress || !post.priceAmount) {
@@ -109,6 +112,24 @@ export async function POST(request: Request) {
       { error: "購入の記録に失敗しました" },
       { status: 500 }
     );
+  }
+
+  // 販売者（著者）へ通知。
+  if (post.authorId !== session.user.id) {
+    const buyer = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { displayName: true },
+    });
+    await notify({
+      userId: post.authorId,
+      type: "purchase",
+      actorId: session.user.id,
+      actorName: buyer?.displayName ?? null,
+      postId,
+      postTitle: post.title,
+      amount: verified.amount,
+      currency: post.priceCurrency ?? "XYM",
+    });
   }
 
   return NextResponse.json({ ok: true, confirmed: verified.confirmed });

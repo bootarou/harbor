@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizePostHtml } from "@/lib/sanitize";
 import { parseTags, postSchema } from "@/lib/validations";
+import { notifyFollowersNewPost } from "@/lib/notifications";
 
 export type PostFormState = {
   error?: string;
@@ -55,7 +56,26 @@ export async function savePost(
       }
       await prisma.post.update({ where: { id: postId }, data });
     } else {
-      await prisma.post.create({ data });
+      const created = await prisma.post.create({
+        data,
+        select: { id: true, title: true, published: true, publishAt: true },
+      });
+      // 新規作成かつ公開中（予約でない）なら、フォロワーへ新着通知。
+      const live =
+        created.published &&
+        (!created.publishAt || created.publishAt.getTime() <= Date.now());
+      if (live) {
+        const author = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { displayName: true },
+        });
+        await notifyFollowersNewPost({
+          authorId: userId,
+          authorName: author?.displayName ?? "",
+          postId: created.id,
+          postTitle: created.title,
+        });
+      }
     }
     return null;
   };

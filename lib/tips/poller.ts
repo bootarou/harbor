@@ -9,6 +9,7 @@ import {
   nodeFetch,
 } from "@/lib/wallet/symbol";
 import { fetchXymJpyRate } from "@/lib/rates";
+import { notify } from "@/lib/notifications";
 
 // Symbol ノードを確定済みトランザクションでポーリングし、
 // メッセージの "nagexym:tip:<postId>" マーカーで記事へ紐付けて Tip を確定する。
@@ -106,7 +107,11 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
     // マーカーの postId が実在し、かつ宛先がその記事著者のアドレスと一致するもののみ採用。
     const post = await prisma.post.findUnique({
       where: { id: parsed.postId },
-      select: { id: true, author: { select: { id: true, xymAddress: true } } },
+      select: {
+        id: true,
+        title: true,
+        author: { select: { id: true, xymAddress: true } },
+      },
     });
     if (!post || post.author.xymAddress !== address) continue;
 
@@ -132,6 +137,15 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
           },
         });
         result.confirmed += 1;
+        // 確定（着金確認）のタイミングで著者へ通知。
+        await notify({
+          userId: post.author.id,
+          type: "tip_received",
+          postId: post.id,
+          postTitle: post.title,
+          amount: parsed.amountXym,
+          currency: "XYM",
+        });
       }
     } else {
       try {
@@ -149,6 +163,14 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
         });
         result.created += 1;
         result.confirmed += 1;
+        await notify({
+          userId: post.author.id,
+          type: "tip_received",
+          postId: post.id,
+          postTitle: post.title,
+          amount: parsed.amountXym,
+          currency: "XYM",
+        });
       } catch (e) {
         // 別のポーリング/クライアント記録と競合（txHash 重複）した場合は
         // 既に記録済みなので無視（確定済みへの更新は次回ポーリングで収束）。

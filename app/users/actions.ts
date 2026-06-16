@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notify } from "@/lib/notifications";
 
 export type FollowState = { error?: string };
 
@@ -26,6 +27,17 @@ export async function followUser(
   try {
     await prisma.follow.create({
       data: { followerId: session.user.id, followingId: targetId },
+    });
+    // フォローされた人へ通知（新規フォロー成立時のみ）。
+    const me = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { displayName: true },
+    });
+    await notify({
+      userId: targetId,
+      type: "follow",
+      actorId: session.user.id,
+      actorName: me?.displayName ?? null,
     });
   } catch (e) {
     // 既にフォロー済み（unique 制約）は成功扱い

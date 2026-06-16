@@ -34,7 +34,8 @@ model User {
   xymAddress      String? // 受取アドレス（通常 symbolAddress と同一）
   tokushoho       String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
   salesTerms      String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
-  notificationsReadAt DateTime? // 通知を最後に確認した時刻（未読数の算出に使用）
+  notificationsReadAt DateTime? // （旧）通知を最後に確認した時刻
+  notificationPrefs   Json? // 通知種別ごとの ON/OFF（未設定キーは既定値）
   createdAt       DateTime @default(now())
 
   posts     Post[]
@@ -49,6 +50,26 @@ model User {
   following Follow[] @relation("Following") // この人がフォローしている関係
   followers Follow[] @relation("Followers") // この人がフォローされている関係
   bookmarks Bookmark[]
+  notifications Notification[]
+}
+
+// サイト内通知。表示用にアクター名・記事タイトル等をスナップショット保存（FKに依存しない）。
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String // 受信者
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // tip_received | comment | reaction | purchase | new_post | follow
+  actorId   String? // 行為者のユーザーID（プロフィール遷移用・FKなし）
+  actorName String? // 行為者の表示名（スナップショット）
+  postId    String? // 遷移先記事（FKなし）
+  postTitle String?
+  amount    Decimal? // 投げ銭/購入額
+  currency  String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 model Report {

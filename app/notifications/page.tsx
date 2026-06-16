@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { reactionMeta } from "@/lib/thanks";
 import { formatXym } from "@/lib/format";
 import { ThanksButtons } from "@/components/thanks-buttons";
+import { notificationText, notificationUrl } from "@/lib/notifications";
 
 export const metadata = { title: "通知" };
 
@@ -21,6 +22,12 @@ export default async function NotificationsPage() {
     redirect("/login?callbackUrl=/notifications");
   }
   const me = session.user.id;
+
+  const notifications = await prisma.notification.findMany({
+    where: { userId: me },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
 
   const [reactions, received] = await Promise.all([
     // 自分の記事への、他ユーザーのリアクション
@@ -62,15 +69,49 @@ export default async function NotificationsPage() {
     }),
   ]);
 
-  // このページを開いた時点で「確認済み」にする（ヘッダーの未読バッジをクリア）。
-  await prisma.user.update({
-    where: { id: me },
-    data: { notificationsReadAt: new Date() },
+  // このページを開いた時点で全通知を既読化（ヘッダーの未読バッジをクリア）。
+  await prisma.notification.updateMany({
+    where: { userId: me, read: false },
+    data: { read: true },
   });
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <h1 className="mb-8 text-2xl font-bold">通知</h1>
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-lg font-semibold">最近の通知</h2>
+        {notifications.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            通知はまだありません。
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
+            {notifications.map((n) => {
+              const { title, body } = notificationText(n);
+              const url = notificationUrl(n);
+              return (
+                <li key={n.id} className="py-3">
+                  <Link href={url} className="block hover:underline">
+                    <p className="text-sm font-medium">
+                      {!n.read && (
+                        <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" />
+                      )}
+                      {title}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+                      {body}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
+                      {formatDate(n.createdAt)}
+                    </p>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-semibold">

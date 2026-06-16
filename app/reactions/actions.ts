@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isReactionKey } from "@/lib/thanks";
+import { notify } from "@/lib/notifications";
 
 export type ReactionResult = { error?: string; active?: boolean };
 
@@ -22,7 +23,7 @@ export async function toggleReaction(
 
   const post = await prisma.post.findUnique({
     where: { id: postId },
-    select: { published: true },
+    select: { published: true, authorId: true, title: true },
   });
   if (!post || !post.published) {
     return { error: "記事が見つかりません" };
@@ -44,6 +45,21 @@ export async function toggleReaction(
       data: { postId, userId: session.user.id, type },
     });
     active = true;
+    // 著者へ通知（自分の記事への自分のリアクションは除く）。
+    if (post.authorId !== session.user.id) {
+      const me = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { displayName: true },
+      });
+      await notify({
+        userId: post.authorId,
+        type: "reaction",
+        actorId: session.user.id,
+        actorName: me?.displayName ?? null,
+        postId,
+        postTitle: post.title,
+      });
+    }
   }
 
   revalidatePath(`/posts/${postId}`);
