@@ -14,6 +14,7 @@ import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
 import { formatXym } from "@/lib/format";
+import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
 
 function shortAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -194,6 +195,7 @@ export default async function PostDetailPage({
   const canReadPaid = !post.paid || isAuthor || hasPurchased;
   const isUrl = post.postType === "external_url";
   const tipAllowed = !isUrl || post.tipsEnabled;
+  const ytId = isUrl ? youtubeEmbedId(post.url) : null;
 
   // リアクション集計と、ログインユーザー自身のリアクション
   const [reactionGroups, myReactions] = await Promise.all([
@@ -275,29 +277,54 @@ export default async function PostDetailPage({
             {post.comment && (
               <p className="whitespace-pre-wrap text-sm">{post.comment}</p>
             )}
-            {post.url && (
-              <a
-                href={post.url}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
-              >
-                {post.ogpImageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={post.ogpImageUrl} alt="" className="max-h-72 w-full object-cover" />
-                )}
-                <div className="p-3">
-                  <p className="font-semibold">{post.ogpTitle || post.url}</p>
-                  {post.ogpDescription && (
-                    <p className="mt-1 line-clamp-3 text-sm text-gray-600 dark:text-gray-400">
-                      {post.ogpDescription}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-gray-400">
-                    {post.ogpSiteName || post.url}
-                  </p>
+            {ytId ? (
+              <div className="flex flex-col gap-2">
+                <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
+                  <iframe
+                    src={youtubeEmbedUrl(ytId)}
+                    title={post.ogpTitle || "YouTube video"}
+                    className="h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                  />
                 </div>
-              </a>
+                {post.url && (
+                  <a
+                    href={post.url}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="self-start text-xs text-gray-500 underline dark:text-gray-400"
+                  >
+                    YouTube で開く
+                  </a>
+                )}
+              </div>
+            ) : (
+              post.url && (
+                <a
+                  href={post.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                >
+                  {post.ogpImageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={post.ogpImageUrl} alt="" className="max-h-72 w-full object-cover" />
+                  )}
+                  <div className="p-3">
+                    <p className="font-semibold">{post.ogpTitle || post.url}</p>
+                    {post.ogpDescription && (
+                      <p className="mt-1 line-clamp-3 text-sm text-gray-600 dark:text-gray-400">
+                        {post.ogpDescription}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-400">
+                      {post.ogpSiteName || post.url}
+                    </p>
+                  </div>
+                </a>
+              )
             )}
           </div>
         ) : (
