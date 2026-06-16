@@ -171,3 +171,28 @@ export async function fetchXymBalance(address: string): Promise<number> {
   // XYM の divisibility は 6。
   return Number(xym.amount) / 1_000_000;
 }
+
+// 送金手数料の概算バッファ（maxFee は ~0.02XYM 程度。余裕を持たせる）。
+export const FEE_BUFFER_XYM = 0.1;
+
+/**
+ * 送金前の残高チェック。残高（手数料バッファ込み）が不足していれば警告文を返す。
+ * 足りていれば null。残高取得に失敗した場合はブロックしない（送信時に判明するため null）。
+ */
+export async function checkSufficientBalance(
+  address: string,
+  amountXym: number
+): Promise<string | null> {
+  let balance: number;
+  try {
+    balance = await fetchXymBalance(address);
+  } catch {
+    return null;
+  }
+  const needed = amountXym + FEE_BUFFER_XYM;
+  if (balance < needed) {
+    const fmt = (n: number) => Math.round(n * 1_000_000) / 1_000_000;
+    return `残高が不足しています（必要 約${fmt(needed)} XYM / 残高 ${fmt(balance)} XYM）。送金額に加えてネットワーク手数料が必要です。`;
+  }
+  return null;
+}

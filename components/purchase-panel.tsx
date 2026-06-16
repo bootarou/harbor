@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
 import { sendPurchase } from "@/lib/wallet/transfer";
+import { checkSufficientBalance } from "@/lib/wallet/symbol";
 import { formatXym } from "@/lib/format";
 
 export function PurchasePanel({
@@ -37,6 +38,11 @@ export function PurchasePanel({
     }
     setBusy(true);
     try {
+      const balErr = await checkSufficientBalance(wallet.address, priceAmount);
+      if (balErr) {
+        setError(balErr);
+        return;
+      }
       const privateKey = await decryptPrivateKey(wallet, passphrase);
       // 投稿者(販売者)へ直接送金（運営は送金を預からない）。
       const signed = await sendPurchase({

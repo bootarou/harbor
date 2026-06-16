@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
 import { sendThanks } from "@/lib/wallet/transfer";
+import { checkSufficientBalance } from "@/lib/wallet/symbol";
 import { formatXym } from "@/lib/format";
 import { THANKS_CONFIG, type ThanksType } from "@/lib/thanks";
 
@@ -49,8 +50,13 @@ export function ThanksButtons({
     }
     setBusy(true);
     try {
-      const privateKey = await decryptPrivateKey(wallet, passphrase);
       const amount = THANKS_CONFIG[open].amount;
+      const balErr = await checkSufficientBalance(wallet.address, amount);
+      if (balErr) {
+        setError(balErr);
+        return;
+      }
+      const privateKey = await decryptPrivateKey(wallet, passphrase);
       const signed = await sendThanks({
         privateKey,
         recipientAddress: receiverAddress,

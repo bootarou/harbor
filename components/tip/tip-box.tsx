@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
 import { sendTip } from "@/lib/wallet/transfer";
+import { checkSufficientBalance } from "@/lib/wallet/symbol";
 
 const MIN = 0.1;
 const MAX = 10;
@@ -55,6 +56,12 @@ export function TipBox({
     }
     setBusy(true);
     try {
+      // 残高チェック（手数料込みで不足なら送信前に警告）。
+      const balErr = await checkSufficientBalance(wallet.address, amount);
+      if (balErr) {
+        setError(balErr);
+        return;
+      }
       // パスフレーズで秘密鍵を復号（メモリ上のみ）。
       const privateKey = await decryptPrivateKey(wallet, passphrase);
       // 署名・アナウンス（クライアントで完結）。
