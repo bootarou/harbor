@@ -4,9 +4,9 @@
   "private": true,
   "license": "AGPL-3.0-or-later OR LicenseRef-Harbor-Commercial",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/next-with-env.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/next-with-env.mjs start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
