@@ -58,7 +58,18 @@ export function SiteHeader() {
   return (
     <header className="border-b border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <Link href="/" className="font-bold">
+        {/* ロゴは常に最新トップを取得したいので、通常クリックはフルリロードにする
+            （同一 / にいてもサーバー再取得され、最新記事が読み込まれる）。
+            修飾キー/中クリック（新規タブ等）はブラウザ既定に任せる。 */}
+        <Link
+          href="/"
+          className="font-bold"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            e.preventDefault();
+            window.location.assign("/");
+          }}
+        >
           ⚓Harbor
         </Link>
 
