@@ -56,7 +56,31 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - PostgreSQL 14+
 - （任意）Docker
 
-## セットアップ
+## Docker Compose で一発起動（本番向け）
+
+DB（PostgreSQL）込みで `docker compose` だけで起動できます。
+
+```bash
+# 1. 環境変数（AUTH_SECRET は必須）
+cp .env.docker.example .env
+#   - AUTH_SECRET=$(openssl rand -base64 32) を設定
+#   - 必要に応じて PORT / NEXT_PUBLIC_* / S3_* / SMTP_* を設定
+#     （NEXT_PUBLIC_* と DB認証はビルド時に焼き込まれるため、変更後は --build で再ビルド）
+
+# 2. 起動（DB作成 → スキーマ反映 → アプリ起動まで自動）
+docker compose up -d --build
+```
+
+- アプリは `http://localhost:${PORT:-3000}` で待ち受け（`.env` の `PORT` で変更可）。
+- DB は `db` サービス（postgres:16）を使い、`DATABASE_URL` は compose 側で自動生成（`.env` の設定は不要）。
+- データは名前付きボリューム（`pgdata` / `uploads`）に永続化。
+- 停止: `docker compose down`（データ保持） / 破棄: `docker compose down -v`（ボリュームも削除）。
+- 起動時に `prisma db push` でスキーマを自動反映（冪等）。
+
+> `NEXT_PUBLIC_*`（Symbol ネットワーク／ノードURL等）はクライアントへビルド時にインライン化されるため、
+> 値を変えたら `docker compose up -d --build` で再ビルドが必要です。
+
+## セットアップ（ローカル開発）
 
 ```bash
 # 1. 依存インストール
@@ -149,17 +173,3 @@ npm run dev   # http://localhost:3000
 - ローカル鍵暗号化は Web Crypto API（PBKDF2 + AES-256-GCM）のみ使用。
 - Tiptap の出力は保存時に許可リスト方式でサニタイズ（XSS 対策）。外部 URL 取得（OGP）は SSRF 対策（http/https 限定・プライベートホスト拒否・サイズ/時間制限）。
 - セキュリティヘッダ / CSP を `next.config.ts` で付与。
-
-## ライセンス
-
-Harbor は **デュアルライセンス**（AGPL-3.0 + 商用）で提供されます。
-
-- **(A) GNU AGPL-3.0**（オープンソース・無償）: [`LICENSE`](./LICENSE) を参照。
-  改変版を**ネットワークサービスとして提供する場合も対応ソースコードの開示が必要**です（AGPL 第13条）。
-- **(B) 商用ライセンス**（有償・個別契約）: ソース非公開での SaaS 提供やプロプライエタリ製品への
-  組み込みなど、AGPL の条件を満たせない用途向け。
-
-詳細・選択方法は [`LICENSING.md`](./LICENSING.md) を参照してください。
-商用ライセンスのお問い合わせ: **bootarou — bootarouapp@gmail.com**
-
-Copyright (c) 2026 bootarou.

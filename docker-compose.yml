@@ -1,0 +1,74 @@
+# Harbor (nageXym) — docker compose で「一発起動」する構成。
+#
+#   1. cp .env.docker.example .env   # AUTH_SECRET などを設定
+#   2. docker compose up -d --build
+#
+# .env の値は compose の ${VAR} 置換と app への環境変数注入に使われる。
+# DB は db サービス（postgres）を使い、DATABASE_URL は compose 側で組み立てる
+# （アプリ用 .env の localhost 設定はコンテナ内では使わない）。
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-nagexym}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-nagexym}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      args:
+        # NEXT_PUBLIC_* はビルド時に焼き込まれる。値を変えたら再ビルドが必要。
+        NEXT_PUBLIC_SYMBOL_NETWORK: ${NEXT_PUBLIC_SYMBOL_NETWORK:-testnet}
+        NEXT_PUBLIC_SYMBOL_NODE_URL: ${NEXT_PUBLIC_SYMBOL_NODE_URL:-https://sym-test-01.opening-line.jp:3001}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_S3_PUBLIC_URL: ${NEXT_PUBLIC_S3_PUBLIC_URL:-}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # DB は内部の db サービスへ接続（ホスト名は compose のサービス名 "db"）
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-nagexym}?schema=public
+      # 認証（必須）。未設定なら起動を止める。
+      AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET を .env に設定してください（openssl rand -base64 32 で生成）}"
+      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
+      AUTH_URL: ${AUTH_URL:-}
+      PORT: ${PORT:-3000}
+      # Symbol（実行時にも参照）
+      NEXT_PUBLIC_SYMBOL_NETWORK: ${NEXT_PUBLIC_SYMBOL_NETWORK:-testnet}
+      NEXT_PUBLIC_SYMBOL_NODE_URL: ${NEXT_PUBLIC_SYMBOL_NODE_URL:-https://sym-test-01.opening-line.jp:3001}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      # cron / 通報メール（任意）
+      CRON_SECRET: ${CRON_SECRET:-}
+      REPORT_NOTIFY_EMAIL: ${REPORT_NOTIFY_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      # 画像ストレージ（任意。未設定ならローカル /app/public/uploads に保存＝uploads ボリュームで永続化）
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      NEXT_PUBLIC_S3_PUBLIC_URL: ${NEXT_PUBLIC_S3_PUBLIC_URL:-}
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      # S3 未設定時のローカル画像保存を永続化
+      - uploads:/app/public/uploads
+
+volumes:
+  pgdata:
+  uploads:

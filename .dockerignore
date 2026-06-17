@@ -1,0 +1,34 @@
+# 依存・成果物（イメージ内で再生成する）
+node_modules
+.next
+out
+build
+
+# 秘密情報・ローカル設定（イメージに焼き込まない）
+.env
+.env*.local
+
+# git / CI / エディタ
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# 内部ドキュメント
+CLAUDE.md
+spec.md
+docs
+
+# アップロード実ファイル（ボリュームで永続化する）
+public/uploads/avatars
+public/uploads/covers
+public/uploads/posts
+
+# その他
+*.tsbuildinfo
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
