@@ -4,7 +4,6 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProfileForm } from "@/components/profile-form";
 import { SmdSync } from "@/components/auth/smd-sync";
-import { NotificationSettings } from "@/components/notification-settings";
 
 export const metadata = {
   title: "プロフィール編集",
@@ -79,11 +78,6 @@ export default async function ProfilePage() {
           Symbol チェーン上の social_meta_data から表示名・画像などを取り込みます（確認後に適用）。
         </p>
         <SmdSync address={user.symbolAddress} />
-      </section>
-
-      <section className="mt-10 border-t border-gray-200 pt-6 dark:border-gray-800">
-        <h2 className="mb-3 text-sm font-semibold">通知設定</h2>
-        <NotificationSettings />
       </section>
     </main>
   );

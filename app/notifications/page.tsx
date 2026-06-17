@@ -6,6 +6,7 @@ import { reactionMeta } from "@/lib/thanks";
 import { formatXym } from "@/lib/format";
 import { ThanksButtons } from "@/components/thanks-buttons";
 import { notificationText, notificationUrl } from "@/lib/notifications";
+import { NotificationSettings } from "@/components/notification-settings";
 
 export const metadata = { title: "通知" };
 
@@ -78,6 +79,15 @@ export default async function NotificationsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <h1 className="mb-8 text-2xl font-bold">通知</h1>
+
+      <details className="mb-8 rounded-lg border border-gray-200 dark:border-gray-800">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
+          通知設定
+        </summary>
+        <div className="border-t border-gray-200 px-4 py-4 dark:border-gray-800">
+          <NotificationSettings />
+        </div>
+      </details>
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-semibold">最近の通知</h2>
