@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteBaseUrl()),
   title: {
     default: "⚓Harbor",
-    template: "%s | Harbor",
+    template: "%s | ⚓Harbor",
   },
   description: "⚓Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
   openGraph: {

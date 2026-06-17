@@ -27,6 +27,7 @@ export function DidLogin() {
   const [selected, setSelected] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [passphrase, setPassphrase] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,13 +131,24 @@ export function DidLogin() {
       </p>
       <label className="flex flex-col gap-1 text-sm">
         ウォレットパスワード
-        <input
-          type="password"
-          required
-          value={passphrase}
-          onChange={(e) => setPassphrase(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
+        <div className="relative">
+          <input
+            type={showPass ? "text" : "password"}
+            required
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 pr-16 dark:border-gray-700 dark:bg-gray-900"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPass((s) => !s)}
+            aria-pressed={showPass}
+            aria-label={showPass ? "パスワードを隠す" : "パスワードを表示"}
+            className="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            {showPass ? "隠す" : "表示"}
+          </button>
+        </div>
       </label>
       <button
         type="submit"

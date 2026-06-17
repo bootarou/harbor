@@ -59,7 +59,7 @@ export function SiteHeader() {
     <header className="border-b border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Link href="/" className="font-bold">
-          Harbor
+          ⚓Harbor
         </Link>
 
         {/* デスクトップ: 横並びナビ */}

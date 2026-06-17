@@ -93,15 +93,32 @@ function PassphraseFields({
   setP1: (v: string) => void;
   setP2: (v: string) => void;
 }) {
+  const [show, setShow] = useState(false);
+  const inputType = show ? "text" : "password";
+  const inputClass =
+    "w-full rounded-md border border-gray-300 px-3 py-2 pr-16 dark:border-gray-700 dark:bg-gray-900";
   return (
     <>
       <label className="flex flex-col gap-1 text-sm">
         ウォレットパスワード（8文字以上）
-        <input type="password" value={p1} onChange={(e) => setP1(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900" />
+        <div className="relative">
+          <input type={inputType} value={p1} onChange={(e) => setP1(e.target.value)} className={inputClass} />
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            aria-pressed={show}
+            aria-label={show ? "パスワードを隠す" : "パスワードを表示"}
+            className="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            {show ? "隠す" : "表示"}
+          </button>
+        </div>
       </label>
       <label className="flex flex-col gap-1 text-sm">
         ウォレットパスワード（確認）
-        <input type="password" value={p2} onChange={(e) => setP2(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900" />
+        <div className="relative">
+          <input type={inputType} value={p2} onChange={(e) => setP2(e.target.value)} className={inputClass} />
+        </div>
       </label>
     </>
   );
