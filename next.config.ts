@@ -12,7 +12,9 @@ const csp = [
   // 'wasm-unsafe-eval': symbol-hd-wallets→bip32→tiny-secp256k1 がブラウザで
   // WebAssembly(secp256k1.wasm) を使うため必須。これが無いと本番でウォレット系
   // （ログイン/新規登録/送金）の JS が CSP に阻まれ動かない。
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
+  // Cloudflare（Tunnel / Web Analytics）が自動注入するビーコンを許可。
+  // 解析を使わない場合は Cloudflare 側で Web Analytics を無効化してもよい。
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
