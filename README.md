@@ -149,3 +149,17 @@ npm run dev   # http://localhost:3000
 - ローカル鍵暗号化は Web Crypto API（PBKDF2 + AES-256-GCM）のみ使用。
 - Tiptap の出力は保存時に許可リスト方式でサニタイズ（XSS 対策）。外部 URL 取得（OGP）は SSRF 対策（http/https 限定・プライベートホスト拒否・サイズ/時間制限）。
 - セキュリティヘッダ / CSP を `next.config.ts` で付与。
+
+## ライセンス
+
+Harbor は **デュアルライセンス**（AGPL-3.0 + 商用）で提供されます。
+
+- **(A) GNU AGPL-3.0**（オープンソース・無償）: [`LICENSE`](./LICENSE) を参照。
+  改変版を**ネットワークサービスとして提供する場合も対応ソースコードの開示が必要**です（AGPL 第13条）。
+- **(B) 商用ライセンス**（有償・個別契約）: ソース非公開での SaaS 提供やプロプライエタリ製品への
+  組み込みなど、AGPL の条件を満たせない用途向け。
+
+詳細・選択方法は [`LICENSING.md`](./LICENSING.md) を参照してください。
+商用ライセンスのお問い合わせ: **bootarou — bootarouapp@gmail.com**
+
+Copyright (c) 2026 bootarou.
