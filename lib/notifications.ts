@@ -203,6 +203,8 @@ export function notificationUrl(n: {
 }): string {
   // フォロー通知は新フォロワーのプロフィールへ。
   if (n.type === "follow") return n.actorId ? `/users/${n.actorId}` : "/notifications";
+  // 購入通知は買ったユーザーのプロフィールへ（actorId が無ければ記事へフォールバック）。
+  if (n.type === "purchase" && n.actorId) return `/users/${n.actorId}`;
   if (n.postId) return `/posts/${n.postId}`;
   return "/notifications";
 }
@@ -226,7 +228,7 @@ export function notificationText(n: {
     case "reaction":
       return { title: "リアクション", body: `${who} さんが「${post}」にいいねしました` };
     case "purchase":
-      return { title: "記事が売れました 🛒", body: `「${post}」が購入されました（${amt}）` };
+      return { title: "記事が売れました 🛒", body: `${who} さんが「${post}」を購入しました（${amt}）` };
     case "new_post":
       return { title: "新着記事", body: `${who} さんが「${post}」を投稿しました` };
     case "follow":
