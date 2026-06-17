@@ -11,20 +11,20 @@ import { siteBaseUrl } from "@/lib/site";
 export const metadata: Metadata = {
   metadataBase: new URL(siteBaseUrl()),
   title: {
-    default: "Harbor",
+    default: "⚓Harbor",
     template: "%s | Harbor",
   },
-  description: "Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
+  description: "⚓Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
   openGraph: {
-    title: "Harbor",
-    description: "Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
+    title: "⚓Harbor",
+    description: "⚓Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
     type: "website",
     images: ["/og-default.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Harbor",
-    description: "Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
+    title: "⚓Harbor",
+    description: "⚓Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
     images: ["/og-default.png"],
   },
 };
