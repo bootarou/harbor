@@ -7,7 +7,7 @@ import { livePostWhere } from "@/lib/posts";
 import { FollowButton } from "@/components/follow-button";
 
 function formatDate(d: Date): string {
-  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(d);
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeZone: "Asia/Tokyo" }).format(d);
 }
 
 export async function generateMetadata({

@@ -21,7 +21,7 @@ export type PostCardData = {
 };
 
 function formatDate(d: Date | string): string {
-  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeZone: "Asia/Tokyo" }).format(
     new Date(d)
   );
 }

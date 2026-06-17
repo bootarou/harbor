@@ -44,6 +44,8 @@ services:
       AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
       AUTH_URL: ${AUTH_URL:-}
       PORT: ${PORT:-3000}
+      # 表示時刻のタイムゾーン（コード側でも Asia/Tokyo を明示しているが保険）
+      TZ: ${TZ:-Asia/Tokyo}
       # Symbol（実行時にも参照）
       NEXT_PUBLIC_SYMBOL_NETWORK: ${NEXT_PUBLIC_SYMBOL_NETWORK:-testnet}
       NEXT_PUBLIC_SYMBOL_NODE_URL: ${NEXT_PUBLIC_SYMBOL_NODE_URL:-https://sym-test-01.opening-line.jp:3001}

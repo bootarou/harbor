@@ -49,7 +49,8 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    TZ=Asia/Tokyo
 
 # Prisma の schema engine（起動時の db push）が libssl を必要とするため OpenSSL を導入。
 RUN apt-get update \
