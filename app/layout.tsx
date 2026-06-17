@@ -3,14 +3,13 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { siteBaseUrl } from "@/lib/site";
 
 // フォントはシステムフォント（globals.css で定義）を使用。
 // ビルド時に Google Fonts を取得しないため、オフライン/制限環境でもビルドできる。
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-  ),
+  metadataBase: new URL(siteBaseUrl()),
   title: {
     default: "Harbor",
     template: "%s | Harbor",

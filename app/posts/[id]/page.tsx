@@ -15,6 +15,7 @@ import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
 import { formatXym } from "@/lib/format";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
+import { absoluteUrl } from "@/lib/site";
 
 function shortAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -58,9 +59,11 @@ export async function generateMetadata({
       "外部コンテンツの紹介"
     : htmlToText(post.contentHTML, 120);
   // 画像が無い記事はサイト共通のフォールバック OG 画像を使う。
-  const image = (isExternal ? post.ogpImageUrl : post.coverImage) || "/og-default.png";
-  const images = [image];
-  const url = `/posts/${id}`;
+  // X/Twitter 等の外部クローラーが取得できるよう、必ず公開ドメインの絶対URLにする。
+  const rawImage =
+    (isExternal ? post.ogpImageUrl : post.coverImage) || "/og-default.png";
+  const images = [absoluteUrl(rawImage)];
+  const url = absoluteUrl(`/posts/${id}`);
 
   return {
     title,
