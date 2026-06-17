@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { PostFeed } from "@/components/post-feed";
+import { HomeHighlights } from "@/components/home-highlights";
 import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
+import { getHomeHighlights } from "@/lib/home";
 
 function buildQuery(opts: { q?: string; tag?: string }): string {
   const sp = new URLSearchParams();
@@ -22,11 +24,13 @@ export default async function Home({
 
   const filtering = q !== "" || tag !== "";
 
-  const [{ posts, hasMore }, total, tagRows] = await Promise.all([
+  const [{ posts, hasMore }, total, tagRows, highlights] = await Promise.all([
     getPostsPage({ page: 1, q, tag }),
     filtering ? prisma.post.count({ where: buildPostWhere({ q, tag }) }) : Promise.resolve(0),
     // タグナビ用（公開中の記事のタグを集計）
     prisma.post.findMany({ where: livePostWhere(), select: { tags: true } }),
+    // トップのハイライト（絞り込み中は不要）
+    filtering ? Promise.resolve(null) : getHomeHighlights(),
   ]);
 
   // 上位タグ
@@ -92,6 +96,13 @@ export default async function Home({
             すべて表示
           </Link>
         </p>
+      )}
+
+      {/* トップのハイライト（投げ銭ティッカー/ランキング/注目）。絞り込み中は非表示。 */}
+      {!filtering && highlights && <HomeHighlights data={highlights} />}
+
+      {!filtering && (
+        <h2 className="mb-4 text-lg font-bold">新着記事</h2>
       )}
 
       {posts.length === 0 ? (

@@ -278,6 +278,7 @@ export function PostForm({ initial }: { initial: PostInitial }) {
       {!isUrl && (
         <>
           <input type="hidden" name="contentHTML" value={contentHTML} />
+          <input type="hidden" name="coverImage" value={coverImage} />
           <input type="hidden" name="paidHtml" value={paidHtml} />
           <input type="hidden" name="paid" value={paid ? "true" : "false"} />
 
