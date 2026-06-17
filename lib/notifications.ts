@@ -1,6 +1,8 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { sendEmail } from "@/lib/email";
+import { absoluteUrl } from "@/lib/site";
 
 export type NotificationType =
   | "tip_received"
@@ -64,10 +66,52 @@ type NotifyInput = {
   currency?: string | null;
 };
 
+// 通知をメールでも送る（メール登録済み＆メール通知ON の受信者のみ）。
+// 種別ごとの ON/OFF（notificationPrefs）はブラウザ通知と共通で、呼び出し側が
+// 既にフィルタ済みであることを前提とする。失敗してもトリガー側を止めない。
+async function sendNotificationEmail(
+  to: string,
+  n: {
+    type: string;
+    actorName: string | null;
+    postTitle: string | null;
+    amount: Prisma.Decimal | number | null;
+    currency: string | null;
+    postId: string | null;
+    actorId?: string | null;
+  }
+): Promise<void> {
+  try {
+    const { title, body } = notificationText(n);
+    const link = absoluteUrl(notificationUrl(n));
+    const text = [
+      body,
+      "",
+      "▼ 確認する",
+      link,
+      "",
+      "── このメールは ⚓Harbor のメール通知設定（ON）に基づき送信されています。",
+      "通知の種類や受信ON/OFFはプロフィール設定から変更できます。",
+    ].join("\n");
+    await sendEmail({ to, subject: `[⚓Harbor] ${title}`, text });
+  } catch (e) {
+    console.error("notification email error", e);
+  }
+}
+
 // 1人へ通知を作成（受信者の設定で OFF なら作らない）。失敗してもトリガー側を止めない。
+// メール登録済み＆メール通知ON のユーザーには、同じ種別設定に従ってメールも送る。
 export async function notify(input: NotifyInput): Promise<void> {
   try {
-    const prefs = await getPrefs(input.userId);
+    const u = await prisma.user.findUnique({
+      where: { id: input.userId },
+      select: {
+        notificationPrefs: true,
+        email: true,
+        emailNotificationsEnabled: true,
+      },
+    });
+    const prefs = normalizePrefs(u?.notificationPrefs);
     if (!prefs[input.type]) return;
     await prisma.notification.create({
       data: {
@@ -81,6 +125,17 @@ export async function notify(input: NotifyInput): Promise<void> {
         currency: input.currency ?? null,
       },
     });
+    if (u?.email && u.emailNotificationsEnabled) {
+      await sendNotificationEmail(u.email, {
+        type: input.type,
+        actorName: input.actorName ?? null,
+        postTitle: input.postTitle ?? null,
+        amount: input.amount ?? null,
+        currency: input.currency ?? null,
+        postId: input.postId ?? null,
+        actorId: input.actorId ?? null,
+      });
+    }
   } catch (e) {
     console.error("notify error", e);
   }
@@ -97,7 +152,14 @@ export async function notifyFollowersNewPost(args: {
     const follows = await prisma.follow.findMany({
       where: { followingId: args.authorId },
       select: {
-        follower: { select: { id: true, notificationPrefs: true } },
+        follower: {
+          select: {
+            id: true,
+            notificationPrefs: true,
+            email: true,
+            emailNotificationsEnabled: true,
+          },
+        },
       },
     });
     const recipients = follows
@@ -114,6 +176,20 @@ export async function notifyFollowersNewPost(args: {
         postTitle: args.postTitle,
       })),
     });
+    // メール登録済み＆メール通知ON のフォロワーにはメールでも通知。
+    for (const u of recipients) {
+      if (u.email && u.emailNotificationsEnabled) {
+        await sendNotificationEmail(u.email, {
+          type: "new_post",
+          actorName: args.authorName,
+          postTitle: args.postTitle,
+          amount: null,
+          currency: null,
+          postId: args.postId,
+          actorId: args.authorId,
+        });
+      }
+    }
   } catch (e) {
     console.error("notifyFollowersNewPost error", e);
   }
