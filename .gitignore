@@ -35,3 +35,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI assistant / 内部開発ドキュメント（公開リポジトリには含めない）
+/CLAUDE.md
+/spec.md
+/docs/
+.claude/

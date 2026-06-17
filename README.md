@@ -50,8 +50,6 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - セキュリティヘッダ / CSP（`next.config.ts`）、404 / エラーバウンダリ / メタデータ整備
 - Vercel cron による着金ポーリングの定期実行
 
-詳細な実装履歴は `docs/progress.md`、仕様は `docs/spec.md` を参照。
-
 ## 必要環境
 
 - Node.js **20 以上**（推奨 22 LTS）
