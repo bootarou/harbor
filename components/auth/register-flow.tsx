@@ -181,6 +181,8 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
   const [c2, setC2] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // input: 入力中 / smd: SMD候補を確認して項目選択中（ここで自動ログインしない）
+  const [phase, setPhase] = useState<"input" | "smd">("input");
   const [smd, setSmd] = useState<SmdCandidate | null>(null);
   const [smdNote, setSmdNote] = useState<string | null>(null);
   const [applyName, setApplyName] = useState(true);
@@ -188,45 +190,91 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
   const [applyUrl, setApplyUrl] = useState(false);
   const [applyNamespace, setApplyNamespace] = useState(false);
 
-  async function finish() {
-    setError(null);
-    // 入力（フレーズ or 秘密鍵）から秘密鍵を導出する。
-    let derivedPrivateKey: string;
+  // 入力（フレーズ or 秘密鍵）から秘密鍵を導出する。失敗時は error をセットし null。
+  function derivePrivateKey(): string | null {
     try {
       if (via === "phrase") {
         const words = phrase.trim().replace(/\s+/g, " ");
-        if (!isValidMnemonic(words))
-          return setError("リカバリーフレーズが正しくありません（12語または24語）。");
-        derivedPrivateKey = deriveAccount(words).privateKey;
-      } else {
-        const pk = privateKey.trim();
-        if (!PRIVATE_KEY_RE.test(pk))
-          return setError("秘密鍵の形式が正しくありません（64桁の16進数）。");
-        derivedPrivateKey = accountFromPrivateKey(pk).privateKey;
+        if (!isValidMnemonic(words)) {
+          setError("リカバリーフレーズが正しくありません（12語または24語）。");
+          return null;
+        }
+        return deriveAccount(words).privateKey;
       }
+      const pk = privateKey.trim();
+      if (!PRIVATE_KEY_RE.test(pk)) {
+        setError("秘密鍵の形式が正しくありません（64桁の16進数）。");
+        return null;
+      }
+      return accountFromPrivateKey(pk).privateKey;
     } catch {
-      return setError("入力からウォレットを復元できませんでした。");
+      setError("入力からウォレットを復元できませんでした。");
+      return null;
     }
-    if (p1.length < 8) return setError("パスワードは8文字以上にしてください。");
-    if (p1 !== p2) return setError("パスワードが一致しません。");
-    if (!c1 || !c2) return setError("バックアップ確認にチェックしてください。");
+  }
+
+  function validateInputs(): boolean {
+    if (p1.length < 8) {
+      setError("パスワードは8文字以上にしてください。");
+      return false;
+    }
+    if (p1 !== p2) {
+      setError("パスワードが一致しません。");
+      return false;
+    }
+    if (!c1 || !c2) {
+      setError("バックアップ確認にチェックしてください。");
+      return false;
+    }
+    return true;
+  }
+
+  // 1段階目: 入力検証 → SMD候補を取得。候補があれば確認フェーズで停止（自動ログインしない）。
+  async function proceed() {
+    setError(null);
+    const pk = derivePrivateKey();
+    if (!pk) return;
+    if (!validateInputs()) return;
     setBusy(true);
     try {
-      const account = accountFromPrivateKey(derivedPrivateKey);
-      // SMD 候補を取得（任意・確認用。失敗しても続行）
+      const account = accountFromPrivateKey(pk);
       try {
         const r = await fetch(`/api/smd?address=${account.address}`);
         const data = (await r.json()) as
           | { status: "ok"; candidate: SmdCandidate }
           | { status: "none" }
           | { status: "invalid"; reason: string };
-        if (data.status === "ok") setSmd(data.candidate);
-        else if (data.status === "invalid")
+        if (data.status === "ok") {
+          // 候補あり → ここで停止してユーザーに項目選択させる。
+          setSmd(data.candidate);
+          setPhase("smd");
+          setBusy(false);
+          return;
+        }
+        if (data.status === "invalid")
           setSmdNote("SMDが見つかりましたが形式が正しくないため自動適用できません。");
       } catch {
-        /* SMD取得失敗は無視 */
+        /* SMD取得失敗は無視して続行 */
       }
+      // 候補なし → そのまま作成・ログイン。
+      await commit(pk);
+    } catch (e) {
+      console.error(e);
+      setError(
+        e instanceof WebCryptoUnavailableError ? e.message : "復元に失敗しました"
+      );
+      setBusy(false);
+    }
+  }
 
+  // 2段階目: 暗号化保存 → ログイン → 選択した SMD 項目を適用 → 遷移。
+  async function commit(pk?: string) {
+    setError(null);
+    const key = pk ?? derivePrivateKey();
+    if (!key) return;
+    setBusy(true);
+    try {
+      const account = accountFromPrivateKey(key);
       const enc = await encryptPrivateKey(account.privateKey, p1, account.address);
       saveStoredWallet(enc);
       const res = await didLoginWithPrivateKey(account.privateKey);
@@ -235,12 +283,14 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
         setBusy(false);
         return;
       }
-      // ログイン後、選択された SMD 項目を適用（サーバーが本人アドレスで再取得）
-      await fetch("/api/smd/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applyName, applyImageUrl, applyUrl, applyNamespace }),
-      }).catch(() => {});
+      // SMD候補を確認した場合のみ、選択項目を適用（サーバーが本人アドレスで再取得）。
+      if (smd) {
+        await fetch("/api/smd/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ applyName, applyImageUrl, applyUrl, applyNamespace }),
+        }).catch(() => {});
+      }
       router.push("/");
       router.refresh();
     } catch (e) {
@@ -306,7 +356,7 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
 
       {smd && (
         <div className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-700">
-          <p className="font-semibold">SMDプロフィールが見つかりました。適用する項目を選んでください。</p>
+          <p className="font-semibold">SMDプロフィールが見つかりました。適用する項目を選び、下のボタンで確定してください。</p>
           <div className="mt-2 flex items-center gap-3">
             {smd.imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -337,9 +387,26 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
       {smdNote && <p className="text-xs text-gray-500 dark:text-gray-400">{smdNote}</p>}
 
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
-      <button type="button" onClick={finish} disabled={busy} className="rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">
-        {busy ? "インポート・ログイン中..." : "インポートしてログイン"}
-      </button>
+
+      {phase === "smd" ? (
+        <button
+          type="button"
+          onClick={() => commit()}
+          disabled={busy}
+          className="rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+        >
+          {busy ? "作成・ログイン中..." : "この内容でアカウント作成・ログイン"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={proceed}
+          disabled={busy}
+          className="rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+        >
+          {busy ? "確認中..." : "インポートして続行"}
+        </button>
+      )}
     </div>
   );
 }

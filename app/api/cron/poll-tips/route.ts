@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { pollAllTips } from "@/lib/tips/poller";
+import { pollAllPurchases } from "@/lib/purchases/poller";
 
-// 全著者アドレスの着金をポーリングして投げ銭を確定する（外部 cron 用）。
+// 投げ銭の着金＋有料記事の購入をポーリングして確定/記録する（外部 cron 用）。
 // CRON_SECRET による Bearer 認証で保護する。
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -16,8 +17,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await pollAllTips();
-    return NextResponse.json({ ok: true, ...result });
+    const [tips, purchases] = await Promise.all([
+      pollAllTips(),
+      pollAllPurchases(),
+    ]);
+    return NextResponse.json({ ok: true, tips, purchases });
   } catch (error) {
     console.error("poll-tips error", error);
     return NextResponse.json({ error: "ポーリングに失敗しました" }, { status: 500 });

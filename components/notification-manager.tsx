@@ -23,11 +23,20 @@ export function NotificationManager() {
   const pathname = usePathname();
   const userId = session?.user?.id;
 
-  // SW 登録（一度だけ）。
+  // SW 登録。読み込み中に登録するとタブのロードインジケータが止まらなくなることがあるため、
+  // 必ず window の load 後に登録する。
   useEffect(() => {
     if (!userId) return;
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    const register = () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    };
+    if (document.readyState === "complete") {
+      register();
+      return;
+    }
+    window.addEventListener("load", register, { once: true });
+    return () => window.removeEventListener("load", register);
   }, [userId]);
 
   // ポーリング。前回以降に作成された通知をブラウザ通知する。

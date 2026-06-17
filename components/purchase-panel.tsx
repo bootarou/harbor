@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
@@ -24,13 +24,77 @@ export function PurchasePanel({
   priceCurrency: string;
 }) {
   const router = useRouter();
+  const storageKey = `nagexym.purchase.${postId}`;
   const [open, setOpen] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  // 送信済みで確認待ちの txHash（再送信を防ぎ、以後は再確認のみ）。
+  const [pendingTx, setPendingTx] = useState<string | null>(null);
 
-  async function buy() {
+  // 送信済みの txHash を localStorage から復元（リロード/再訪でも再送信しない）。
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingTx(window.localStorage.getItem(storageKey));
+  }, [storageKey]);
+
+  // 同じ txHash をサーバーで再確認する（送信はしない）。
+  const confirmTx = useCallback(
+    async (txHash: string) => {
+      setError(null);
+      setInfo(null);
+      setBusy(true);
+      try {
+        const res = await fetch("/api/purchases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ postId, txHash }),
+        });
+        const data = (await res.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+          pending?: boolean;
+        } | null;
+
+        if (res.ok) {
+          // 記録成立 → 解除。
+          window.localStorage.removeItem(storageKey);
+          setPendingTx(null);
+          router.refresh();
+          return;
+        }
+        if (res.status === 202 || data?.pending) {
+          // 反映待ち。再送信せず再確認を促す。
+          setInfo(
+            data?.message ??
+              "送金はまだ反映されていません。しばらくして「再確認」してください。"
+          );
+          return;
+        }
+        // 不一致など。再送信はしない（多重課金防止）。
+        setError(
+          (data?.error ?? "購入を確認できませんでした。") +
+            " 送金は送信済みのため再送信されません。時間をおいて再確認してください。"
+        );
+      } catch {
+        setError("通信に失敗しました。時間をおいて再確認してください。");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [postId, storageKey, router]
+  );
+
+  // 新規送金（1回のみ）。送信したら即座に pendingTx を保存し、以後は再確認に切り替わる。
+  const buy = useCallback(async () => {
     setError(null);
+    setInfo(null);
+    if (pendingTx) {
+      // 念のため: 既に送信済みなら再送信しない。
+      void confirmTx(pendingTx);
+      return;
+    }
     const wallet = getStoredWallet();
     if (!wallet) {
       setError("購入には自分のウォレットが必要です。");
@@ -51,30 +115,26 @@ export function PurchasePanel({
         amountXym: priceAmount,
         postId,
       });
-      // サーバーがオンチェーン検証してから記録 → 全文解除。
-      const res = await fetch("/api/purchases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId, txHash: signed.hash }),
-      });
-      const data = (await res.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      if (!res.ok) {
-        throw new Error(data?.error ?? "購入の確認に失敗しました");
-      }
+      // 送金できたら必ず pendingTx を保存（この時点で二重送信を完全に封じる）。
+      // 保存後の確認は pendingTx の effect が一度だけ実行する（確認の二重実行を避ける）。
+      window.localStorage.setItem(storageKey, signed.hash);
+      setPendingTx(signed.hash);
       setPassphrase("");
-      router.refresh(); // 全文解除を反映
     } catch (e) {
-      if (e instanceof WrongPassphraseError) {
-        setError(e.message);
-      } else {
-        setError(e instanceof Error ? e.message : "購入に失敗しました");
-      }
+      if (e instanceof WrongPassphraseError) setError(e.message);
+      else setError(e instanceof Error ? e.message : "送金に失敗しました");
     } finally {
       setBusy(false);
     }
-  }
+  }, [pendingTx, confirmTx, passphrase, postId, priceAmount, sellerAddress, storageKey]);
+
+  // pendingTx 復元時、自動で一度だけ再確認する。
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (pendingTx) void confirmTx(pendingTx);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTx]);
 
   const hasWallet = typeof window !== "undefined" && getStoredWallet() !== null;
 
@@ -82,7 +142,7 @@ export function PurchasePanel({
     <div className="rounded-lg border border-amber-300 bg-amber-50/60 p-5 dark:border-amber-900 dark:bg-amber-950/40">
       <h3 className="text-base font-bold">この続きは購読権の購入で読めます</h3>
 
-      {!open ? (
+      {!open && !pendingTx ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -92,7 +152,6 @@ export function PurchasePanel({
         </button>
       ) : (
         <div className="mt-4 flex flex-col gap-3 text-sm">
-          {/* 購入前確認 */}
           <dl className="grid grid-cols-[6rem_1fr] gap-y-1">
             <dt className="text-gray-500">記事</dt>
             <dd className="truncate font-medium">{title}</dd>
@@ -107,11 +166,7 @@ export function PurchasePanel({
           </dl>
 
           <div className="rounded-md bg-white/70 p-3 text-xs text-gray-600 dark:bg-black/30 dark:text-gray-300">
-            本記事の販売者は投稿者です。
-            <br />
-            送金は利用者のウォレットから販売者のアドレスへ直接行われます。
-            <br />
-            運営は送金を預かりません。
+            送金は利用者のウォレットから販売者のアドレスへ直接行われます。運営は送金を預かりません。
           </div>
 
           {error && (
@@ -119,8 +174,31 @@ export function PurchasePanel({
               {error}
             </p>
           )}
+          {info && (
+            <p className="rounded-md bg-blue-50 px-3 py-2 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+              {info}
+            </p>
+          )}
 
-          {hasWallet ? (
+          {pendingTx ? (
+            // 送信済み: 再送信せず、確認のみ。
+            <div className="flex flex-col gap-2">
+              <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                送金は送信済みです（確認中）。<strong>もう一度送金しないでください。</strong>
+                反映までしばらくかかることがあります。
+                <br />
+                <span className="break-all font-mono">tx: {pendingTx}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => confirmTx(pendingTx)}
+                disabled={busy}
+                className="self-start rounded-md bg-amber-500 px-4 py-2 font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+              >
+                {busy ? "確認中..." : "購入を再確認する"}
+              </button>
+            </div>
+          ) : hasWallet ? (
             <>
               <input
                 type="password"
