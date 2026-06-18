@@ -146,24 +146,38 @@ export default async function UserProfilePage({
       </section>
 
       {(user.tokushoho || user.salesTerms) && (
-        <section className="mt-8 flex flex-col gap-6">
+        <section className="mt-8 flex flex-col gap-4">
           {user.tokushoho && (
-            <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-              <h2 className="text-sm font-semibold">
-                📜 特定商取引法に基づく表記
-              </h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+            <details className="group rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold [&::-webkit-details-marker]:hidden">
+                <span>📜 特定商取引法に基づく表記</span>
+                <span
+                  className="text-gray-400 transition-transform group-open:rotate-180"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </summary>
+              <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
                 {user.tokushoho}
               </p>
-            </div>
+            </details>
           )}
           {user.salesTerms && (
-            <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-              <h2 className="text-sm font-semibold">利用規約・販売条件</h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+            <details className="group rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold [&::-webkit-details-marker]:hidden">
+                <span>利用規約・販売条件</span>
+                <span
+                  className="text-gray-400 transition-transform group-open:rotate-180"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </summary>
+              <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
                 {user.salesTerms}
               </p>
-            </div>
+            </details>
           )}
         </section>
       )}
