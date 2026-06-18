@@ -7,7 +7,12 @@ export type RevenueFilter = {
   status?: "all" | "confirmed";
 };
 
-export type RevenueCategory = "sale" | "tip_in" | "thanks_in" | "thanks_out";
+export type RevenueCategory =
+  | "sale"
+  | "tip_in"
+  | "tip_out"
+  | "thanks_in"
+  | "thanks_out";
 
 export type RevenueRecord = {
   date: Date;
@@ -46,7 +51,7 @@ function jpyValue(amount: number, rate: number | null): number | null {
 }
 
 // 著者(userId)の収益関連レコードを統合して日付降順で返す。
-// 受取: 販売(購入) / 投げ銭 / Thanks受取  送信: Thanks送信
+// 受取: 販売(購入) / 投げ銭受取 / Thanks受取  送信: 投げ銭送信 / Thanks送信
 export async function getRevenueRecords(
   userId: string,
   filter: RevenueFilter
@@ -54,7 +59,7 @@ export async function getRevenueRecords(
   const range = dateRange(filter);
   const confirmedOnly = filter.status === "confirmed";
 
-  const [purchases, tips, thanksIn, thanksOut] = await Promise.all([
+  const [purchases, tips, tipsOut, thanksIn, thanksOut] = await Promise.all([
     prisma.purchase.findMany({
       where: {
         post: { authorId: userId },
@@ -85,6 +90,22 @@ export async function getRevenueRecords(
         txHash: true,
         confirmed: true,
         anonymous: true,
+        jpyRate: true,
+        post: { select: { title: true } },
+      },
+    }),
+    prisma.tip.findMany({
+      where: {
+        fromUserId: userId,
+        ...(confirmedOnly ? { confirmed: true } : {}),
+        ...(range ? { confirmedAt: range } : {}),
+      },
+      select: {
+        confirmedAt: true,
+        amount: true,
+        toAddress: true,
+        txHash: true,
+        confirmed: true,
         jpyRate: true,
         post: { select: { title: true } },
       },
@@ -156,6 +177,24 @@ export async function getRevenueRecords(
         label: "投げ銭受取",
         title: t.post.title,
         counterparty: t.anonymous ? "(匿名)" : t.fromAddress,
+        amount,
+        currency: "XYM",
+        txHash: t.txHash,
+        confirmed: t.confirmed,
+        jpyRate: rate,
+        jpyValue: jpyValue(amount, rate),
+      };
+    }),
+    ...tipsOut.map((t): RevenueRecord => {
+      const amount = Number(t.amount);
+      const rate = t.jpyRate != null ? Number(t.jpyRate) : null;
+      return {
+        date: t.confirmedAt,
+        category: "tip_out",
+        direction: "out",
+        label: "投げ銭送信",
+        title: t.post.title,
+        counterparty: t.toAddress,
         amount,
         currency: "XYM",
         txHash: t.txHash,

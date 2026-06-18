@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { getRevenueRecords, type RevenueFilter } from "@/lib/sales/query";
 import { formatXym } from "@/lib/format";
 
-// 収益管理 CSV（販売・投げ銭受取・Thanks受取・Thanks送信）。会計・税務の参考用。
+// 収益管理 CSV（販売・投げ銭受取・投げ銭送信・Thanks受取・Thanks送信）。会計・税務の参考用。
 // クエリ(from,to,status)でフィルタ可。円換算は記録時点レートによる参考値。
 function csvField(v: string): string {
   if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;

@@ -47,6 +47,7 @@ export async function RevenueSummary({
   const cat: Record<RevenueCategory, Bucket> = {
     sale: zero(),
     tip_in: zero(),
+    tip_out: zero(),
     thanks_in: zero(),
     thanks_out: zero(),
   };
@@ -54,7 +55,13 @@ export async function RevenueSummary({
   const ensureMonth = (m: string) => {
     let r = months.get(m);
     if (!r) {
-      r = { sale: zero(), tip_in: zero(), thanks_in: zero(), thanks_out: zero() };
+      r = {
+        sale: zero(),
+        tip_in: zero(),
+        tip_out: zero(),
+        thanks_in: zero(),
+        thanks_out: zero(),
+      };
       months.set(m, r);
     }
     return r;
@@ -70,8 +77,8 @@ export async function RevenueSummary({
 
   const incomeXym = cat.sale.xym + cat.tip_in.xym + cat.thanks_in.xym;
   const incomeJpy = cat.sale.jpy + cat.tip_in.jpy + cat.thanks_in.jpy;
-  const outXym = cat.thanks_out.xym;
-  const outJpy = cat.thanks_out.jpy;
+  const outXym = cat.tip_out.xym + cat.thanks_out.xym;
+  const outJpy = cat.tip_out.jpy + cat.thanks_out.jpy;
   const netXym = incomeXym - outXym;
   const netJpy = incomeJpy - outJpy;
 
@@ -83,7 +90,13 @@ export async function RevenueSummary({
     const y = yyyy(rec.date);
     let yb = years.get(y);
     if (!yb) {
-      yb = { sale: zero(), tip_in: zero(), thanks_in: zero(), thanks_out: zero() };
+      yb = {
+        sale: zero(),
+        tip_in: zero(),
+        tip_out: zero(),
+        thanks_in: zero(),
+        thanks_out: zero(),
+      };
       years.set(y, yb);
     }
     yb[rec.category].xym += rec.amount;
@@ -177,13 +190,14 @@ export async function RevenueSummary({
           <p className="mb-2 text-sm font-semibold">受取</p>
           <div className="flex flex-col gap-1 text-sm">
             <Line label="販売" b={cat.sale} />
-            <Line label="投げ銭" b={cat.tip_in} />
+            <Line label="投げ銭受取" b={cat.tip_in} />
             <Line label="Thanks受取" b={cat.thanks_in} />
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
           <p className="mb-2 text-sm font-semibold">送信</p>
           <div className="flex flex-col gap-1 text-sm">
+            <Line label="投げ銭送信" b={cat.tip_out} />
             <Line label="Thanks送信" b={cat.thanks_out} />
           </div>
         </div>
@@ -209,9 +223,10 @@ export async function RevenueSummary({
                 <tr className="border-b border-gray-200 text-left text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
                   <th className="py-2 pr-3">年</th>
                   <th className="py-2 pr-3 text-right">販売(¥)</th>
-                  <th className="py-2 pr-3 text-right">投げ銭(¥)</th>
+                  <th className="py-2 pr-3 text-right">投げ銭受取(¥)</th>
                   <th className="py-2 pr-3 text-right">Thanks受取(¥)</th>
                   <th className="py-2 pr-3 text-right">受取合計(¥)</th>
+                  <th className="py-2 pr-3 text-right">投げ銭送信(¥)</th>
                   <th className="py-2 pr-3 text-right">Thanks送信(¥)</th>
                   <th className="py-2 text-right">差引(¥)</th>
                 </tr>
@@ -219,7 +234,7 @@ export async function RevenueSummary({
               <tbody>
                 {yearRows.map(([y, b]) => {
                   const income = b.sale.jpy + b.tip_in.jpy + b.thanks_in.jpy;
-                  const net = income - b.thanks_out.jpy;
+                  const net = income - b.tip_out.jpy - b.thanks_out.jpy;
                   return (
                     <tr
                       key={y}
@@ -233,6 +248,9 @@ export async function RevenueSummary({
                       </td>
                       <td className="py-2 pr-3 text-right font-semibold">
                         {yen(income)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {yen(b.tip_out.jpy)}
                       </td>
                       <td className="py-2 pr-3 text-right">
                         {yen(b.thanks_out.jpy)}
@@ -260,8 +278,9 @@ export async function RevenueSummary({
               <tr className="border-b border-gray-200 text-left text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
                 <th className="py-2 pr-3">年月</th>
                 <th className="py-2 pr-3 text-right">販売(¥)</th>
-                <th className="py-2 pr-3 text-right">投げ銭(¥)</th>
+                <th className="py-2 pr-3 text-right">投げ銭受取(¥)</th>
                 <th className="py-2 pr-3 text-right">Thanks受取(¥)</th>
+                <th className="py-2 pr-3 text-right">投げ銭送信(¥)</th>
                 <th className="py-2 pr-3 text-right">Thanks送信(¥)</th>
                 <th className="py-2 text-right">差引(¥)</th>
               </tr>
@@ -269,7 +288,11 @@ export async function RevenueSummary({
             <tbody>
               {monthRows.map(([m, b]) => {
                 const net =
-                  b.sale.jpy + b.tip_in.jpy + b.thanks_in.jpy - b.thanks_out.jpy;
+                  b.sale.jpy +
+                  b.tip_in.jpy +
+                  b.thanks_in.jpy -
+                  b.tip_out.jpy -
+                  b.thanks_out.jpy;
                 return (
                   <tr
                     key={m}
@@ -279,6 +302,7 @@ export async function RevenueSummary({
                     <td className="py-2 pr-3 text-right">{yen(b.sale.jpy)}</td>
                     <td className="py-2 pr-3 text-right">{yen(b.tip_in.jpy)}</td>
                     <td className="py-2 pr-3 text-right">{yen(b.thanks_in.jpy)}</td>
+                    <td className="py-2 pr-3 text-right">{yen(b.tip_out.jpy)}</td>
                     <td className="py-2 pr-3 text-right">{yen(b.thanks_out.jpy)}</td>
                     <td className="py-2 text-right font-semibold">{yen(net)}</td>
                   </tr>
