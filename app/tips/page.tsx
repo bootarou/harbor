@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SyncTipsButton } from "@/components/tip/sync-tips-button";
 import { formatXym } from "@/lib/format";
+import { tipStatus, type TipStatus } from "@/lib/tips/status";
 
 export const metadata = { title: "投げ銭履歴" };
 
@@ -19,12 +20,25 @@ function explorerUrl(hash: string): string {
   return `https://testnet.symbol.fyi/transactions/${hash}`;
 }
 
-function StatusBadge({ confirmed }: { confirmed: boolean }) {
-  return confirmed ? (
-    <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 dark:bg-green-950 dark:text-green-200">
-      確定
-    </span>
-  ) : (
+function StatusBadge({ status }: { status: TipStatus }) {
+  if (status === "confirmed") {
+    return (
+      <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-800 dark:bg-green-950 dark:text-green-200">
+        確定
+      </span>
+    );
+  }
+  if (status === "expired") {
+    return (
+      <span
+        title="ネットワークの承認期限（約2時間）を過ぎたため着金を確認できませんでした"
+        className="rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-950 dark:text-red-300"
+      >
+        期限切れ
+      </span>
+    );
+  }
+  return (
     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
       確認中
     </span>
@@ -48,6 +62,7 @@ export default async function TipsPage() {
         anonymous: true,
         confirmed: true,
         confirmedAt: true,
+        createdAt: true,
         txHash: true,
         toAddress: true,
         post: { select: { id: true, title: true } },
@@ -62,6 +77,7 @@ export default async function TipsPage() {
         anonymous: true,
         confirmed: true,
         confirmedAt: true,
+        createdAt: true,
         fromAddress: true,
         fromUser: { select: { id: true, displayName: true } },
         post: { select: { id: true, title: true } },
@@ -69,8 +85,13 @@ export default async function TipsPage() {
     }),
   ]);
 
-  const sentTotal = sent.reduce((s, t) => s + Number(t.amount), 0);
-  const receivedTotal = received.reduce((s, t) => s + Number(t.amount), 0);
+  // 合計は確定分のみ（未確定・期限切れは表示はするが合計には含めない）。
+  const sentTotal = sent
+    .filter((t) => t.confirmed)
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const receivedTotal = received
+    .filter((t) => t.confirmed)
+    .reduce((s, t) => s + Number(t.amount), 0);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
@@ -100,7 +121,7 @@ export default async function TipsPage() {
                     {t.post.title}
                   </Link>
                   <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <StatusBadge confirmed={t.confirmed} />
+                    <StatusBadge status={tipStatus(t)} />
                     {formatDate(t.confirmedAt)}
                     {t.anonymous && "・匿名"}・
                     <a
@@ -143,7 +164,7 @@ export default async function TipsPage() {
                     {t.post.title}
                   </Link>
                   <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <StatusBadge confirmed={t.confirmed} />
+                    <StatusBadge status={tipStatus(t)} />
                     {t.anonymous ? (
                       "匿名"
                     ) : t.fromUser ? (

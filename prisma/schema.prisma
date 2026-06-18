@@ -272,6 +272,7 @@ model Tip {
   // false: クライアント申告（確認中） / true: ノードのポーリングでオンチェーン確定
   confirmed   Boolean  @default(false)
   jpyRate     Decimal? // 記録時点の XYM/JPY レート（税務の円換算用）
+  createdAt   DateTime @default(now()) // 記録時刻（確認中→期限切れ判定の基準）
   confirmedAt DateTime @default(now())
 
   @@index([postId])

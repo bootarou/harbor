@@ -83,6 +83,14 @@ export function parseTipTransaction(
 
 export type PollResult = { scanned: number; confirmed: number; created: number };
 
+// 複数アドレスを連続でポーリングする際の間隔（ms）。
+// ノードは概ね 250ms 未満の連打を 429 (Too Many Requests) で弾くため、余裕をもって 500ms あける。
+export const POLL_ADDRESS_INTERVAL_MS = 500;
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** 指定アドレス宛の確定済み送金を取得し、該当する投げ銭を確定する。 */
 export async function pollAddressTips(address: string): Promise<PollResult> {
   const currencyId = await getCurrencyMosaicId();
@@ -196,8 +204,12 @@ export async function pollAllTips(): Promise<PollResult> {
     select: { xymAddress: true },
   });
   const total: PollResult = { scanned: 0, confirmed: 0, created: 0 };
+  let first = true;
   for (const u of users) {
     if (!u.xymAddress) continue;
+    // 連続ポーリングはノードの 429 を避けるためアドレス間に間隔をあける。
+    if (!first) await sleep(POLL_ADDRESS_INTERVAL_MS);
+    first = false;
     try {
       const r = await pollAddressTips(u.xymAddress);
       total.scanned += r.scanned;

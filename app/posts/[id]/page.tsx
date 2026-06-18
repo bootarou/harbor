@@ -14,6 +14,7 @@ import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
 import { formatXym } from "@/lib/format";
+import { tipStatus } from "@/lib/tips/status";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
 import { absoluteUrl } from "@/lib/site";
 
@@ -156,6 +157,7 @@ export default async function PostDetailPage({
           anonymous: true,
           confirmed: true,
           confirmedAt: true,
+          createdAt: true,
           fromAddress: true,
           fromUser: { select: { displayName: true } },
         },
@@ -431,15 +433,26 @@ export default async function PostDetailPage({
                 className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 text-sm dark:border-gray-800"
               >
                 <span className="flex items-center gap-2">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs ${
-                      tip.confirmed
+                  {(() => {
+                    const status = tipStatus(tip);
+                    const cls =
+                      status === "confirmed"
                         ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200"
-                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                    }`}
-                  >
-                    {tip.confirmed ? "確定" : "確認中"}
-                  </span>
+                        : status === "expired"
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300";
+                    const label =
+                      status === "confirmed"
+                        ? "確定"
+                        : status === "expired"
+                          ? "期限切れ"
+                          : "確認中";
+                    return (
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${cls}`}>
+                        {label}
+                      </span>
+                    );
+                  })()}
                   {tip.anonymous
                     ? "匿名"
                     : tip.fromUser?.displayName ??

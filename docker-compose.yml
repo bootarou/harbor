@@ -71,6 +71,35 @@ services:
       # S3 未設定時のローカル画像保存を永続化
       - uploads:/app/public/uploads
 
+  # 着金/購入の自動確定スケジューラ（Vercel cron の代替。自己ホスト用）。
+  # CRON_SECRET 設定時のみ実働。未設定ならスキップ（アプリ起動は妨げない）。
+  cron:
+    image: alpine:3.20
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      CRON_SECRET: ${CRON_SECRET:-}
+      APP_URL: http://app:${PORT:-3000}
+      POLL_INTERVAL: ${POLL_INTERVAL:-300}
+    command:
+      - sh
+      - -c
+      - |
+        echo "[cron] poll every $${POLL_INTERVAL}s -> $${APP_URL}/api/cron/poll-tips";
+        while true; do
+          sleep "$$POLL_INTERVAL";
+          if [ -z "$$CRON_SECRET" ]; then
+            echo "[cron] CRON_SECRET 未設定のためスキップ";
+            continue;
+          fi
+          if wget -q -O /dev/null --header="Authorization: Bearer $$CRON_SECRET" "$$APP_URL/api/cron/poll-tips"; then
+            echo "[cron] poll ok ($$(date -u +%FT%TZ))";
+          else
+            echo "[cron] poll failed ($$(date -u +%FT%TZ))";
+          fi
+        done
+
 volumes:
   pgdata:
   uploads:
