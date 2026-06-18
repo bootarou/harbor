@@ -16,6 +16,14 @@ export function SiteFooter() {
           <Link href="/privacy" className="hover:underline">
             プライバシーポリシー
           </Link>
+          <a
+            href="https://github.com/bootarou/harbor"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+          >
+            GitHub
+          </a>
         </nav>
         <p>Harbor — Symbol(XYM) 対応ノンカストディアル・ブログ</p>
         <p>
