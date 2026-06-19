@@ -14,10 +14,37 @@ type Ogp = {
   url: string;
 };
 
+// Canvas でテキストを最大幅に収まるよう行分割する（日本語は単語境界が無いため1文字ずつ）。
+function wrapLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const ch of [...text]) {
+    if (ch === "\n") {
+      lines.push(line);
+      line = "";
+      continue;
+    }
+    const test = line + ch;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = ch;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 type PostInitial = {
   id?: string;
   postType: "article" | "external_url";
   title: string;
+  authorName: string;
   contentHTML: string;
   coverImage: string;
   published: boolean;
@@ -43,11 +70,13 @@ export function PostForm({ initial }: { initial: PostInitial }) {
   const [postType, setPostType] = useState(initial.postType);
   const isUrl = postType === "external_url";
 
+  const [title, setTitle] = useState(initial.title);
   const [contentHTML, setContentHTML] = useState(initial.contentHTML);
   const [paidHtml, setPaidHtml] = useState(initial.paidHtml);
   const [paid, setPaid] = useState(initial.paid);
   const [coverImage, setCoverImage] = useState(initial.coverImage);
   const [coverUploading, setCoverUploading] = useState(false);
+  const [coverGenerating, setCoverGenerating] = useState(false);
   const [coverError, setCoverError] = useState<string | null>(null);
   const coverRef = useRef<HTMLInputElement>(null);
 
@@ -90,6 +119,118 @@ export function PostForm({ initial }: { initial: PostInitial }) {
     const { url: u } = (await res.json()) as { url: string };
     setCoverImage(u);
     setDirty(true);
+  }
+
+  // タイトルテキストを画像化してカバー画像にする（Harbor明記・右下にユーザー名）。
+  async function generateCoverFromTitle() {
+    const t = title.trim();
+    if (!t) {
+      setCoverError("タイトルを入力してから生成してください");
+      return;
+    }
+    setCoverError(null);
+    setCoverGenerating(true);
+    try {
+      const W = 1200;
+      const H = 630;
+      const canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("この環境では画像生成に対応していません");
+
+      const font =
+        '"Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, "Helvetica Neue", Arial, sans-serif';
+
+      // 背景: Harbor ブランドのティールのグラデーション。
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, "#02c39a");
+      grad.addColorStop(1, "#015c49");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      const pad = 72;
+      const maxWidth = W - pad * 2;
+      const areaTop = 140;
+      const areaBottom = H - 120;
+      const areaH = areaBottom - areaTop;
+
+      // 収まる最大フォントサイズを選ぶ。
+      const sizes = [78, 70, 62, 54, 46, 40];
+      let fontSize = sizes[sizes.length - 1];
+      let lines: string[] = [];
+      for (const size of sizes) {
+        ctx.font = `bold ${size}px ${font}`;
+        const ls = wrapLines(ctx, t, maxWidth);
+        if (ls.length * (size * 1.3) <= areaH) {
+          fontSize = size;
+          lines = ls;
+          break;
+        }
+        fontSize = size;
+        lines = ls;
+      }
+      // それでも溢れる場合は行数を制限し末尾を「…」に。
+      const lineHeight = fontSize * 1.3;
+      const maxLines = Math.max(1, Math.floor(areaH / lineHeight));
+      if (lines.length > maxLines) {
+        lines = lines.slice(0, maxLines);
+        const last = lines.length - 1;
+        lines[last] = lines[last].replace(/.$/, "…");
+      }
+
+      // タイトル本文（中央寄せ・左揃え）。
+      ctx.font = `bold ${fontSize}px ${font}`;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      const blockH = lines.length * lineHeight;
+      let y = areaTop + (areaH - blockH) / 2 + lineHeight / 2;
+      for (const line of lines) {
+        ctx.fillText(line, pad, y);
+        y += lineHeight;
+      }
+
+      // 左上: Harbor ワードマーク。
+      ctx.font = `600 32px ${font}`;
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("⚓ Harbor", pad, 56);
+
+      // 右下: ユーザー名のみ（小さめ）。Harbor は左上に明記済み。
+      if (initial.authorName) {
+        ctx.font = `500 27px ${font}`;
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(initial.authorName, W - pad, H - 56);
+      }
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/png")
+      );
+      if (!blob) throw new Error("画像の生成に失敗しました");
+
+      const file = new File([blob], "title-cover.png", { type: "image/png" });
+      const body = new FormData();
+      body.append("file", file);
+      body.append("prefix", "covers");
+      const res = await fetch("/api/upload", { method: "POST", body });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "アップロードに失敗しました");
+      }
+      const { url: u } = (await res.json()) as { url: string };
+      setCoverImage(u);
+      setDirty(true);
+    } catch (e) {
+      setCoverError(e instanceof Error ? e.message : "生成に失敗しました");
+    } finally {
+      setCoverGenerating(false);
+    }
   }
 
   async function fetchOgp() {
@@ -164,8 +305,11 @@ export function PostForm({ initial }: { initial: PostInitial }) {
             name="title"
             required
             maxLength={200}
-            defaultValue={initial.title}
-            onChange={markDirty}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              markDirty();
+            }}
             placeholder="記事のタイトル"
             className="rounded-md border border-gray-300 px-3 py-2 text-lg dark:border-gray-700 dark:bg-gray-900"
           />
@@ -298,14 +442,22 @@ export function PostForm({ initial }: { initial: PostInitial }) {
                 className="max-h-96 w-full rounded-md border border-gray-200 bg-gray-100 object-contain dark:border-gray-700 dark:bg-gray-800"
               />
             )}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => coverRef.current?.click()}
-                disabled={coverUploading}
+                disabled={coverUploading || coverGenerating}
                 className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-900"
               >
                 {coverUploading ? "アップロード中..." : "カバー画像を選択"}
+              </button>
+              <button
+                type="button"
+                onClick={generateCoverFromTitle}
+                disabled={coverUploading || coverGenerating || !title.trim()}
+                className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-900"
+              >
+                {coverGenerating ? "生成中..." : "タイトルから生成"}
               </button>
               {coverImage && (
                 <button

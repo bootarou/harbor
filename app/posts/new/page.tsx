@@ -16,7 +16,7 @@ export default async function NewPostPage() {
 
   const me = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { xymAddress: true },
+    select: { xymAddress: true, displayName: true },
   });
 
   return (
@@ -31,6 +31,7 @@ export default async function NewPostPage() {
         initial={{
           postType: "article",
           title: "",
+          authorName: me?.displayName ?? "",
           contentHTML: "",
           coverImage: "",
           published: false,

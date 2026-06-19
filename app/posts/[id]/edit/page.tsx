@@ -56,7 +56,7 @@ export default async function EditPostPage({
     }),
     prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { xymAddress: true },
+      select: { xymAddress: true, displayName: true },
     }),
   ]);
 
@@ -80,6 +80,7 @@ export default async function EditPostPage({
           id: post.id,
           postType: post.postType === "external_url" ? "external_url" : "article",
           title: post.title,
+          authorName: me?.displayName ?? "",
           contentHTML: post.contentHTML,
           coverImage: post.coverImage ?? "",
           published: post.published,
