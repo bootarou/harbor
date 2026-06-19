@@ -312,3 +312,65 @@ export async function fetchOgp(rawUrl: string): Promise<Ogp> {
     siteName: siteName.slice(0, 200),
   };
 }
+
+// 再ホスト用の画像取得サイズ上限（DoS対策のハードキャップ）。
+const MAX_REMOTE_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB
+
+// 外部の og:image を SSRF 安全に取得する（自前ストレージへ再ホストする用途）。
+// - safeFetch によりホスト検証・リダイレクト各ホップ再検証・http/https 限定
+// - content-type が image/* でなければ拒否、サイズ上限あり
+// - GitHub 等は動的生成のため一時的に 429 を返すことがあり、1回だけ再試行する
+// 失敗時は null を返す（呼び出し側は元の外部URLにフォールバックする想定）。
+export async function fetchRemoteImageSafe(
+  rawUrl: string
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let res: Response;
+    try {
+      res = await safeFetch(rawUrl, {
+        signal: AbortSignal.timeout(8000),
+        headers: {
+          // 動的生成サービス（GitHub 等）はブラウザ風 UA の方が安定する。
+          "User-Agent":
+            "Mozilla/5.0 (compatible; HarborBot/1.0; +OGP image fetch)",
+          Accept: "image/avif,image/webp,image/png,image/*,*/*;q=0.8",
+        },
+      });
+    } catch {
+      return null;
+    }
+    if (res.status === 429 && attempt === 0) {
+      await res.body?.cancel().catch(() => {});
+      await new Promise((r) => setTimeout(r, 600));
+      continue; // 一時的なレート制限のみ1回だけ再試行
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
+    const contentType = (res.headers.get("content-type") || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!contentType.startsWith("image/")) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
+    const reader = res.body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REMOTE_IMAGE_BYTES) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+    return { buffer: Buffer.concat(chunks), contentType };
+  }
+  return null;
+}

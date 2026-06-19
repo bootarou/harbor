@@ -8,10 +8,45 @@ import { prisma } from "@/lib/prisma";
 import { sanitizePostHtml } from "@/lib/sanitize";
 import { parseTags, postSchema } from "@/lib/validations";
 import { notifyFollowersNewPost } from "@/lib/notifications";
+import { fetchRemoteImageSafe } from "@/lib/ogp";
+import { saveImage } from "@/lib/storage";
 
 export type PostFormState = {
   error?: string;
 };
+
+const EXT_BY_IMAGE_MIME: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+// 自前ストレージ上の URL か（再ホスト不要の判定）。
+// - 相対 /uploads/ はローカルフォールバック保存先
+// - S3 公開URLの接頭辞に一致するものも自前
+function isOwnImageUrl(u: string): boolean {
+  if (u.startsWith("/uploads/")) return true;
+  const base = (process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "").replace(/\/$/, "");
+  return base !== "" && u.startsWith(base);
+}
+
+// 外部の og:image を自前ストレージへ再ホストし、保存後の公開URLを返す。
+// 取得・保存いずれかに失敗したら null（呼び出し側は元の外部URLにフォールバック）。
+async function rehostOgImage(url: string): Promise<string | null> {
+  const img = await fetchRemoteImageSafe(url).catch(() => null);
+  if (!img) return null;
+  const ext = EXT_BY_IMAGE_MIME[img.contentType];
+  if (!ext) return null; // 対応形式以外は再ホストせず外部URLのまま
+  try {
+    const file = new File([new Uint8Array(img.buffer)], `og.${ext}`, {
+      type: img.contentType,
+    });
+    return await saveImage(file, "ogp");
+  } catch {
+    return null;
+  }
+}
 
 // 記事の作成・更新（要ログイン、更新は本人のみ）。
 // contentHTML は必ずサーバー側でサニタイズしてから保存する。
@@ -94,7 +129,17 @@ export async function savePost(
     }
     const ogpTitle = str("ogpTitle").slice(0, 300);
     let ogpImageUrl = str("ogpImageUrl").trim();
-    if (!/^https?:\/\//i.test(ogpImageUrl)) ogpImageUrl = "";
+    // 自前の保存先(/uploads や S3)はそのまま、http/https 以外の不正値のみ破棄。
+    if (!isOwnImageUrl(ogpImageUrl) && !/^https?:\/\//i.test(ogpImageUrl)) {
+      ogpImageUrl = "";
+    }
+    // UX優先: 外部の og:image は保存時に自前ストレージへ再ホストし、
+    // 閲覧時の外部直リンク(ホットリンク)による読み込み失敗・429を防ぐ。
+    // 既に自前URLなら再取得しない（編集でプレビュー再取得した時だけ更新される）。
+    if (ogpImageUrl && !isOwnImageUrl(ogpImageUrl)) {
+      const hosted = await rehostOgImage(ogpImageUrl);
+      if (hosted) ogpImageUrl = hosted;
+    }
     const title = (ogpTitle || url).slice(0, 200);
 
     const err = await persist({
