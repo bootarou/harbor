@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
 import { absoluteUrl } from "@/lib/site";
+import { REACTION_TYPES } from "@/lib/thanks";
 import { FollowButton } from "@/components/follow-button";
 
 function formatDate(d: Date): string {
@@ -55,10 +56,13 @@ export async function generateMetadata({
 
 export default async function UserProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tag?: string }>;
 }) {
   const { id } = await params;
+  const { tag: tagParam } = await searchParams;
   const [session, user] = await Promise.all([
     auth(),
     prisma.user.findUnique({
@@ -81,7 +85,7 @@ export default async function UserProfilePage({
         posts: {
           where: livePostWhere(),
           orderBy: { createdAt: "desc" },
-          select: { id: true, title: true, createdAt: true },
+          select: { id: true, title: true, createdAt: true, tags: true },
         },
       },
     }),
@@ -106,16 +110,18 @@ export default async function UserProfilePage({
       : false;
 
   // 統計サマリーの集計（すべてサーバー側で Prisma 集計）。
-  const [tipReceived, likeCount, viewAgg, purchaseAgg, recentSentTips] =
+  const [tipReceived, reactionGroups, viewAgg, purchaseAgg, recentSentTips] =
     await Promise.all([
       // 投げ銭受け取り累計: 確定済みで toAddress=本人の受取アドレス。
       prisma.tip.aggregate({
         _sum: { amount: true },
         where: { confirmed: true, toAddress: user.xymAddress ?? "" },
       }),
-      // 総いいね数: 本人の記事に付いた like リアクション。
-      prisma.reaction.count({
-        where: { type: "like", post: { authorId: user.id } },
+      // リアクション: 本人の記事に付いたリアクションを種類ごとに集計。
+      prisma.reaction.groupBy({
+        by: ["type"],
+        where: { post: { authorId: user.id } },
+        _count: { _all: true },
       }),
       // 総閲覧数: 本人の記事の viewCount 合計。
       prisma.post.aggregate({
@@ -169,6 +175,34 @@ export default async function UserProfilePage({
   const totalViews = viewAgg._sum.viewCount ?? 0;
   const salesCount = purchaseAgg._count;
   const salesXym = xym2(purchaseAgg._sum.amount);
+
+  // リアクションを種類ごとの件数マップ化＋総数。
+  const reactionCountByType = new Map<string, number>(
+    reactionGroups.map((g) => [g.type, g._count._all])
+  );
+  const totalReactions = reactionGroups.reduce(
+    (sum, g) => sum + g._count._all,
+    0
+  );
+
+  // 公開記事のタグを集計（記事0件のタグは出ない）。件数の多い順→名前順。
+  const tagCounts = new Map<string, number>();
+  for (const post of user.posts) {
+    for (const t of post.tags) {
+      tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    }
+  }
+  const tagList = [...tagCounts.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja")
+  );
+  // ?tag= が実在タグなら絞り込み、無効値や未指定は「すべて」。
+  const activeTag =
+    tagParam && tagCounts.has(tagParam) ? tagParam : null;
+  const visiblePosts = activeTag
+    ? user.posts.filter((p) => p.tags.includes(activeTag))
+    : user.posts;
+  // タグが2種類以上あるときのみフィルターUIを表示。
+  const showTagFilter = tagList.length >= 2;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -307,7 +341,7 @@ export default async function UserProfilePage({
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: "投げ銭受取累計", value: `${tipReceivedXym} XYM` },
-          { label: "総いいね数", value: `${likeCount}` },
+          { label: "総リアクション数", value: `${totalReactions}` },
           { label: "総閲覧数", value: `${totalViews.toLocaleString("ja-JP")}` },
           {
             label: "有料記事販売",
@@ -330,6 +364,30 @@ export default async function UserProfilePage({
             )}
           </div>
         ))}
+      </section>
+
+      {/* リアクション内訳: 種類ごとにアイコンと件数を表示（0件も表示） */}
+      <section className="mt-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+          リアクション内訳
+        </p>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {REACTION_TYPES.map((r) => (
+            <span
+              key={r.key}
+              title={r.label}
+              className="flex items-center gap-1.5 text-sm"
+            >
+              <span aria-hidden="true">{r.emoji}</span>
+              <span className="font-semibold">
+                {reactionCountByType.get(r.key) ?? 0}
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {r.label}
+              </span>
+            </span>
+          ))}
+        </div>
       </section>
 
       {(user.tokushoho || user.salesTerms) && (
@@ -371,15 +429,56 @@ export default async function UserProfilePage({
 
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold">
-          公開記事（{user.posts.length}）
+          公開記事（{visiblePosts.length}）
         </h2>
-        {user.posts.length === 0 ? (
+
+        {showTagFilter && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {/* 「すべて」= tag クエリなし */}
+            <Link
+              href={`/users/${user.id}`}
+              scroll={false}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                activeTag === null
+                  ? "border-transparent text-white"
+                  : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+              }`}
+              style={
+                activeTag === null ? { backgroundColor: "#02c39a" } : undefined
+              }
+            >
+              すべて ({user.posts.length})
+            </Link>
+            {tagList.map(([tag, count]) => {
+              const selected = activeTag === tag;
+              return (
+                <Link
+                  key={tag}
+                  href={`/users/${user.id}?tag=${encodeURIComponent(tag)}`}
+                  scroll={false}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    selected
+                      ? "border-transparent text-white"
+                      : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+                  }`}
+                  style={selected ? { backgroundColor: "#02c39a" } : undefined}
+                >
+                  {tag} ({count})
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        {visiblePosts.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            まだ公開記事がありません。
+            {user.posts.length === 0
+              ? "まだ公開記事がありません。"
+              : "このタグの記事はありません。"}
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
-            {user.posts.map((post) => (
+            {visiblePosts.map((post) => (
               <li key={post.id} className="py-3">
                 <Link
                   href={`/posts/${post.id}`}
