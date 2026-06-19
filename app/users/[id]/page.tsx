@@ -9,6 +9,7 @@ import { absoluteUrl } from "@/lib/site";
 import { REACTION_TYPES } from "@/lib/thanks";
 import { CoverImage } from "@/components/cover-image";
 import { FollowButton } from "@/components/follow-button";
+import { ShareButtons } from "@/components/share-buttons";
 
 function formatDate(d: Date): string {
   return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeZone: "Asia/Tokyo" }).format(d);
@@ -332,6 +333,13 @@ export default async function UserProfilePage({
             </p>
           </div>
         )}
+
+        <div className="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800">
+          <ShareButtons
+            url={absoluteUrl(`/users/${user.id}`)}
+            title={`${user.displayName} のプロフィール | Harbor`}
+          />
+        </div>
       </section>
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
