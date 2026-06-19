@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
 import { absoluteUrl } from "@/lib/site";
 import { REACTION_TYPES } from "@/lib/thanks";
+import { CoverImage } from "@/components/cover-image";
 import { FollowButton } from "@/components/follow-button";
 
 function formatDate(d: Date): string {
@@ -214,12 +215,7 @@ export default async function UserProfilePage({
 
       {user.coverImage && (
         <div className="mb-4 aspect-[3/1] w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-gray-800">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={user.coverImage}
-            alt=""
-            className="h-full w-full object-cover"
-          />
+          <CoverImage src={user.coverImage} />
         </div>
       )}
 

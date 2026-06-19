@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateProfile, type ProfileFormState } from "@/app/profile/actions";
+import { CoverImage } from "@/components/cover-image";
 
 type ProfileInitial = {
   displayName: string;
@@ -111,12 +112,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
         <span>カバー画像（公開プロフィールのバナー・シェア時のOGP画像に使用）</span>
         <div className="aspect-[3/1] w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
           {coverImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={coverImage}
-              alt="カバー画像"
-              className="h-full w-full object-cover"
-            />
+            <CoverImage src={coverImage} />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <span className="select-none text-xs text-gray-400 dark:text-gray-500">
