@@ -103,14 +103,20 @@ export default async function UserProfilePage({
               {formatDate(user.createdAt)} に参加
             </p>
             <p className="mt-1 flex gap-4 text-xs text-gray-600 dark:text-gray-400">
-              <span>
+              <Link
+                href={`/users/${user.id}/following`}
+                className="hover:underline"
+              >
                 <span className="font-semibold">{user._count.following}</span>{" "}
-                フォロー
-              </span>
-              <span>
+                フォロー中
+              </Link>
+              <Link
+                href={`/users/${user.id}/followers`}
+                className="hover:underline"
+              >
                 <span className="font-semibold">{user._count.followers}</span>{" "}
                 フォロワー
-              </span>
+              </Link>
             </p>
           </div>
           <div className="ml-auto">
