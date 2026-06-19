@@ -295,7 +295,7 @@ export function PostForm({ initial }: { initial: PostInitial }) {
               <img
                 src={coverImage}
                 alt="カバー画像"
-                className="max-h-48 w-full rounded-md border border-gray-200 object-cover dark:border-gray-700"
+                className="max-h-96 w-full rounded-md border border-gray-200 bg-gray-100 object-contain dark:border-gray-700 dark:bg-gray-800"
               />
             )}
             <div className="flex gap-3">
