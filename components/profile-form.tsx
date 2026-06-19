@@ -9,6 +9,7 @@ type ProfileInitial = {
   bio: string;
   xAccount: string;
   avatarUrl: string;
+  coverImage: string;
   email: string;
   emailNotificationsEnabled: boolean;
   websiteUrl: string;
@@ -26,9 +27,12 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
   );
 
   const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl);
+  const [coverImage, setCoverImage] = useState(initial.coverImage);
   const [uploading, setUploading] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -56,6 +60,33 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
     setAvatarUrl(data.url);
   }
 
+  async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setUploadError(null);
+    setCoverUploading(true);
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("prefix", "profile-covers");
+
+    const res = await fetch("/api/upload", { method: "POST", body });
+    setCoverUploading(false);
+
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      setUploadError(data?.error ?? "アップロードに失敗しました");
+      return;
+    }
+
+    const data = (await res.json()) as { url: string };
+    setCoverImage(data.url);
+  }
+
   // 更新成功後はサーバーコンポーネントを再取得して最新状態を反映。
   useEffect(() => {
     if (state.success) {
@@ -75,6 +106,53 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
           プロフィールを更新しました
         </p>
       )}
+
+      <div className="flex flex-col gap-2 text-sm">
+        <span>カバー画像（公開プロフィールのバナー・シェア時のOGP画像に使用）</span>
+        <div className="aspect-[3/1] w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+          {coverImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={coverImage}
+              alt="カバー画像"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="select-none text-xs text-gray-400 dark:text-gray-500">
+                カバー画像なし
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => coverRef.current?.click()}
+            disabled={coverUploading}
+            className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-900"
+          >
+            {coverUploading ? "アップロード中..." : "カバー画像を選択"}
+          </button>
+          {coverImage && (
+            <button
+              type="button"
+              onClick={() => setCoverImage("")}
+              className="text-xs text-gray-500 underline dark:text-gray-400"
+            >
+              画像を削除
+            </button>
+          )}
+        </div>
+        <input
+          ref={coverRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={handleCoverChange}
+          className="hidden"
+        />
+      </div>
+      <input type="hidden" name="coverImage" value={coverImage} />
 
       <div className="flex items-center gap-4">
         {/* アバターは外部/相対の様々なドメインになり得るため next/image ではなく img を使用 */}
@@ -220,7 +298,7 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
 
       <button
         type="submit"
-        disabled={pending || uploading}
+        disabled={pending || uploading || coverUploading}
         className="mt-2 rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-gray-200"
       >
         {pending ? "保存中..." : "保存する"}

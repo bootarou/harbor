@@ -33,6 +33,15 @@ export const profileSchema = z.object({
     })
     .optional()
     .or(z.literal("")),
+  coverImage: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine((v) => v === "" || v.startsWith("/uploads/") || /^https?:\/\//.test(v), {
+      message: "カバー画像URLが不正です",
+    })
+    .optional()
+    .or(z.literal("")),
   // メールは任意（ログインIDではない。通知・連絡用）
   email: z
     .string()

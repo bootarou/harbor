@@ -25,6 +25,7 @@ model User {
   // ===== プロフィール =====
   displayName     String
   avatarUrl       String?
+  coverImage      String? // プロフィールのカバー画像（公開ページのバナー・OGP用）
   bio             String?
   xAccount        String?
   websiteUrl      String? // SMD url

@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
+import { absoluteUrl } from "@/lib/site";
 import { FollowButton } from "@/components/follow-button";
 
 function formatDate(d: Date): string {
@@ -19,9 +20,37 @@ export async function generateMetadata({
   const { id } = await params;
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { displayName: true },
+    select: { displayName: true, bio: true, coverImage: true },
   });
-  return { title: user ? user.displayName : "ユーザー" };
+  if (!user) {
+    return { title: "ユーザー" };
+  }
+
+  const title = user.displayName;
+  const description = user.bio?.trim() || `${user.displayName} のプロフィール`;
+  // カバー画像があればシェア時のOGPカードに使用。無ければサイト共通のフォールバック。
+  // 外部クローラーが取得できるよう必ず公開ドメインの絶対URLにする。
+  const images = [absoluteUrl(user.coverImage || "/og-default.png")];
+  const url = absoluteUrl(`/users/${id}`);
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      type: "profile",
+      images,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images,
+    },
+  };
 }
 
 export default async function UserProfilePage({
@@ -38,6 +67,7 @@ export default async function UserProfilePage({
         id: true,
         displayName: true,
         avatarUrl: true,
+        coverImage: true,
         bio: true,
         xAccount: true,
         websiteUrl: true,
@@ -147,6 +177,17 @@ export default async function UserProfilePage({
           ← 記事一覧へ戻る
         </Link>
       </nav>
+
+      {user.coverImage && (
+        <div className="mb-4 aspect-[3/1] w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-gray-800">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={user.coverImage}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        </div>
+      )}
 
       <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-800">
         <div className="flex items-center gap-4">
