@@ -315,8 +315,10 @@ export default async function PostDetailPage({
                   className="block overflow-hidden rounded-lg border border-gray-200 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
                 >
                   {post.ogpImageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={post.ogpImageUrl} alt="" className="max-h-72 w-full object-cover" />
+                    <div className="aspect-video w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={post.ogpImageUrl} alt="" className="h-full w-full object-cover" />
+                    </div>
                   )}
                   <div className="p-3">
                     <p className="font-semibold">{post.ogpTitle || post.url}</p>

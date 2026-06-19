@@ -213,8 +213,14 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           {ogp && (
             <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
               {ogp.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={ogp.imageUrl} alt="" className="max-h-48 w-full object-cover" />
+                <div className="aspect-video w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ogp.imageUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                </div>
               )}
               <div className="p-3">
                 <p className="text-sm font-semibold">{ogp.title || "(タイトルなし)"}</p>
