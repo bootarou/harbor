@@ -272,7 +272,10 @@ export async function fetchOgp(rawUrl: string): Promise<Ogp> {
       if (done) break;
       total += value.byteLength;
       html += decoder.decode(value, { stream: true });
-      if (/<\/head>/i.test(html)) break; // head まで取れれば十分
+      // head まで取れれば十分。ただし Next.js/React19 等のストリーミングSSRでは
+      // 先頭シェルに早期の </head> が現れ、og:title 等は後から流れてくるため、
+      // タイトル系を取得済みのときだけ打ち切る（未取得なら MAX まで読み続ける）。
+      if (/<\/head>/i.test(html) && /og:title|<title[\s>]/i.test(html)) break;
     }
     await reader.cancel().catch(() => {});
   } else {

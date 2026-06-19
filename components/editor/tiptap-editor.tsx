@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
+import { LinkCard } from "@/components/editor/link-card-node";
 
 type Props = {
   initialHTML?: string;
@@ -39,6 +40,58 @@ function ToolbarButton({
 
 function Toolbar({ editor }: { editor: Editor }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [cardOpen, setCardOpen] = useState(false);
+  const [cardUrl, setCardUrl] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  // URL を読み込んでリンクカードを挿入（note 風: 入力→Enterで確定）。
+  const insertCard = useCallback(async () => {
+    const url = cardUrl.trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      setCardError("有効なURL（http/https）を入力してください。");
+      return;
+    }
+    setCardError(null);
+    setCardLoading(true);
+    try {
+      const res = await fetch("/api/ogp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        ogp?: {
+          title: string;
+          description: string;
+          imageUrl: string;
+          siteName: string;
+        };
+        error?: string;
+      } | null;
+      if (!res.ok || !data?.ogp) {
+        setCardError(data?.error ?? "リンク情報を取得できませんでした。");
+        return;
+      }
+      editor
+        .chain()
+        .focus()
+        .insertLinkCard({
+          href: url,
+          title: data.ogp.title,
+          description: data.ogp.description,
+          image: data.ogp.imageUrl,
+          siteName: data.ogp.siteName,
+        })
+        .run();
+      setCardUrl("");
+      setCardOpen(false);
+    } catch {
+      setCardError("リンク情報を取得できませんでした。");
+    } finally {
+      setCardLoading(false);
+    }
+  }, [cardUrl, editor]);
 
   const setLink = useCallback(() => {
     const previous = editor.getAttributes("link").href as string | undefined;
@@ -157,6 +210,16 @@ function Toolbar({ editor }: { editor: Editor }) {
       >
         🔗
       </ToolbarButton>
+      <ToolbarButton
+        title="リンクカード"
+        active={cardOpen}
+        onClick={() => {
+          setCardError(null);
+          setCardOpen((v) => !v);
+        }}
+      >
+        🔗＋
+      </ToolbarButton>
       <ToolbarButton title="画像" onClick={() => fileRef.current?.click()}>
         🖼️
       </ToolbarButton>
@@ -167,6 +230,40 @@ function Toolbar({ editor }: { editor: Editor }) {
         onChange={onPickImage}
         className="hidden"
       />
+
+      {cardOpen && (
+        <div className="mt-1 flex w-full flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <input
+              type="url"
+              autoFocus
+              value={cardUrl}
+              onChange={(e) => setCardUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (!cardLoading) insertCard();
+                } else if (e.key === "Escape") {
+                  setCardOpen(false);
+                }
+              }}
+              placeholder="https://… を貼り付けて Enter でカード挿入"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900"
+            />
+            <button
+              type="button"
+              onClick={insertCard}
+              disabled={cardLoading || !cardUrl.trim()}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm transition hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-900"
+            >
+              {cardLoading ? "取得中…" : "挿入"}
+            </button>
+          </div>
+          {cardError && (
+            <p className="text-xs text-red-600 dark:text-red-400">{cardError}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -180,6 +277,7 @@ export function TiptapEditor({ initialHTML, onChange }: Props) {
         link: { openOnClick: false, autolink: true },
       }),
       Image,
+      LinkCard,
     ],
     content: initialHTML ?? "",
     editorProps: {

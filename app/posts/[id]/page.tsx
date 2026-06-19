@@ -13,6 +13,7 @@ import { ShareButtons } from "@/components/share-buttons";
 import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
+import { renderLinkCardsHtml } from "@/lib/link-preview";
 import { formatXym } from "@/lib/format";
 import { tipStatus } from "@/lib/tips/status";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
@@ -199,6 +200,11 @@ export default async function PostDetailPage({
     hasPurchased = purchase !== null;
   }
   const canReadPaid = !post.paid || isAuthor || hasPurchased;
+  // 本文中の <a data-card> をキャッシュからリンクカードHTMLへ置換（保存済み・サニタイズ済み）。
+  const [contentHtmlRendered, paidHtmlRendered] = await Promise.all([
+    renderLinkCardsHtml(post.contentHTML),
+    post.paidHtml ? renderLinkCardsHtml(post.paidHtml) : Promise.resolve(""),
+  ]);
   const isUrl = post.postType === "external_url";
   const tipAllowed = !isUrl || post.tipsEnabled;
   const ytId = isUrl ? youtubeEmbedId(post.url) : null;
@@ -355,13 +361,13 @@ export default async function PostDetailPage({
             {/* 無料部分（販売記事では試し読み）。保存時に sanitize 済み。 */}
             <div
               className="prose prose-sm dark:prose-invert mt-8 max-w-none"
-              dangerouslySetInnerHTML={{ __html: post.contentHTML }}
+              dangerouslySetInnerHTML={{ __html: contentHtmlRendered }}
             />
 
             {post.paid && canReadPaid && post.paidHtml && (
               <div
                 className="prose prose-sm dark:prose-invert mt-2 max-w-none"
-                dangerouslySetInnerHTML={{ __html: post.paidHtml }}
+                dangerouslySetInnerHTML={{ __html: paidHtmlRendered }}
               />
             )}
 

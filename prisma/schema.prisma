@@ -99,6 +99,18 @@ model Challenge {
   @@index([address])
 }
 
+// 本文中リンクカード用の OGP キャッシュ。
+// 記事保存時に <a data-card> のリンクを取得して格納し、表示時はここから読む
+// （表示のたびに外部へ取りに行かない＝高速・レート制限回避）。
+model LinkPreview {
+  url         String   @id // 正規化済みリンクURL
+  title       String?
+  description String?
+  image       String? // 自前ストレージへ再ホスト済みの画像URL（取得できた場合）
+  siteName    String?
+  fetchedAt   DateTime @default(now()) // 取得日時（TTL 再取得判定の基準）
+}
+
 model AuthLog {
   id        String   @id @default(cuid())
   eventType String // challenge_issued / did_login_success / did_login_failed / did_register / smd_synced / session_revoked

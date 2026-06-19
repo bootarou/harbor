@@ -28,7 +28,9 @@ const options: sanitizeHtmlLib.IOptions = {
     "img",
   ],
   allowedAttributes: {
-    a: ["href", "target", "rel"],
+    // data-card はリンクカード化の目印（ハイブリッド方式）。値は固定で表示時に
+    // サーバー側がカード描画に使うのみ。第三者由来のHTMLは保存しない。
+    a: ["href", "target", "rel", "data-card"],
     img: ["src", "alt", "title"],
   },
   // http/https/mailto と相対パス（/uploads/...）のみ許可。javascript: 等は除去される。

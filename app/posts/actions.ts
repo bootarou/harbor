@@ -8,45 +8,12 @@ import { prisma } from "@/lib/prisma";
 import { sanitizePostHtml } from "@/lib/sanitize";
 import { parseTags, postSchema } from "@/lib/validations";
 import { notifyFollowersNewPost } from "@/lib/notifications";
-import { fetchRemoteImageSafe } from "@/lib/ogp";
-import { saveImage } from "@/lib/storage";
+import { isOwnImageUrl, rehostOgImage } from "@/lib/og-image";
+import { upsertLinkPreviewsFromHtml } from "@/lib/link-preview";
 
 export type PostFormState = {
   error?: string;
 };
-
-const EXT_BY_IMAGE_MIME: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
-
-// 自前ストレージ上の URL か（再ホスト不要の判定）。
-// - 相対 /uploads/ はローカルフォールバック保存先
-// - S3 公開URLの接頭辞に一致するものも自前
-function isOwnImageUrl(u: string): boolean {
-  if (u.startsWith("/uploads/")) return true;
-  const base = (process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "").replace(/\/$/, "");
-  return base !== "" && u.startsWith(base);
-}
-
-// 外部の og:image を自前ストレージへ再ホストし、保存後の公開URLを返す。
-// 取得・保存いずれかに失敗したら null（呼び出し側は元の外部URLにフォールバック）。
-async function rehostOgImage(url: string): Promise<string | null> {
-  const img = await fetchRemoteImageSafe(url).catch(() => null);
-  if (!img) return null;
-  const ext = EXT_BY_IMAGE_MIME[img.contentType];
-  if (!ext) return null; // 対応形式以外は再ホストせず外部URLのまま
-  try {
-    const file = new File([new Uint8Array(img.buffer)], `og.${ext}`, {
-      type: img.contentType,
-    });
-    return await saveImage(file, "ogp");
-  } catch {
-    return null;
-  }
-}
 
 // 記事の作成・更新（要ログイン、更新は本人のみ）。
 // contentHTML は必ずサーバー側でサニタイズしてから保存する。
@@ -251,6 +218,12 @@ export async function savePost(
       sellerAddress: null,
     };
   }
+
+  // 本文中のリンクカード（<a data-card>）のOGPを取得してキャッシュ（表示時の外部取得を避ける）。
+  // 失敗しても保存は止めない（表示時は通常リンクにフォールバック）。
+  await upsertLinkPreviewsFromHtml([safeHtml, saleData.paidHtml ?? ""]).catch(
+    (e) => console.error("link preview cache error", e)
+  );
 
   const err = await persist({
     authorId: userId,
