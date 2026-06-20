@@ -78,7 +78,12 @@ export default async function EditPostPage({
       <PostForm
         initial={{
           id: post.id,
-          postType: post.postType === "external_url" ? "external_url" : "article",
+          postType:
+            post.postType === "external_url"
+              ? "external_url"
+              : post.postType === "qa"
+                ? "qa"
+                : "article",
           title: post.title,
           authorName: me?.displayName ?? "",
           contentHTML: post.contentHTML,

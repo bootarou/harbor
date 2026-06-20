@@ -13,6 +13,7 @@ export type PostCardData = {
   priceAmount?: number | null;
   priceCurrency?: string | null;
   postType?: string;
+  qaStatus?: string | null;
   comment?: string | null;
   ogpTitle?: string | null;
   ogpImageUrl?: string | null;
@@ -34,6 +35,7 @@ export function PostCard({
   tip?: { total: number; count: number };
 }) {
   const isUrl = post.postType === "external_url";
+  const isQa = post.postType === "qa";
   const thumb = isUrl ? post.ogpImageUrl : post.coverImage;
   const heading = isUrl ? post.ogpTitle || post.title : post.title;
   const excerpt = post.excerpt ?? "";
@@ -58,6 +60,22 @@ export function PostCard({
           {isUrl && (
             <span className="mb-1 self-start rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800 dark:bg-blue-950 dark:text-blue-200">
               🔗 外部リンク
+            </span>
+          )}
+          {isQa && (
+            <span className="mb-1 flex flex-wrap items-center gap-1">
+              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+                Q&amp;A
+              </span>
+              {post.qaStatus === "answered" ? (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950 dark:text-green-200">
+                  解決済み
+                </span>
+              ) : (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  未回答
+                </span>
+              )}
             </span>
           )}
           {post.paid && (

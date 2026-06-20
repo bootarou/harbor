@@ -45,12 +45,13 @@ export default async function FeedPage() {
           priceAmount: true,
           priceCurrency: true,
           postType: true,
+          qaStatus: true,
           comment: true,
           ogpTitle: true,
           ogpImageUrl: true,
           ogpSiteName: true,
           author: { select: { displayName: true, avatarUrl: true } },
-          tips: { select: { amount: true } },
+          tips: { where: { answerId: null }, select: { amount: true } },
         },
       })
     : [];

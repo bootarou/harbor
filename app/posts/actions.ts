@@ -56,10 +56,14 @@ export async function savePost(
       if (existing.authorId !== userId) {
         return { error: "この記事を編集する権限がありません" };
       }
-      await prisma.post.update({ where: { id: postId }, data });
+      // 更新時は qaStatus を上書きしない（ベストアンサー選定済みの "answered" を保持するため）。
+      const { qaStatus: _omit, ...updateData } = data;
+      void _omit;
+      await prisma.post.update({ where: { id: postId }, data: updateData });
     } else {
       const created = await prisma.post.create({
-        data,
+        // 新規 QA は未回答("open")で作成。それ以外は qaStatus を持たない。
+        data: { ...data, qaStatus: data.postType === "qa" ? "open" : null },
         select: { id: true, title: true, published: true, publishAt: true },
       });
       // 新規作成かつ公開中（予約でない）なら、フォロワーへ新着通知。
@@ -170,6 +174,9 @@ export async function savePost(
     parsed.data;
   const safeHtml = sanitizePostHtml(contentHTML ?? "");
   const cover = coverImage ? coverImage : null;
+  // QA投稿は常に無料（販売不可）。postType を確定する。
+  const isQa = str("postType") === "qa";
+  const articlePostType = isQa ? "qa" : "article";
 
   // 販売公開の追加バリデーション
   let saleData: {
@@ -227,7 +234,7 @@ export async function savePost(
 
   const err = await persist({
     authorId: userId,
-    postType: "article",
+    postType: articlePostType,
     title,
     contentHTML: safeHtml,
     coverImage: cover,

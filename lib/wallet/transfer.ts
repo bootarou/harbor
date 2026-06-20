@@ -38,6 +38,11 @@ export function buildThanksMessage(reactionId: string): string {
   return `nagexym:thanks:${reactionId}`;
 }
 
+// QA の回答への投げ銭用マーカー（記事への投げ銭 nagexym:tip: とは別系統）。
+export function buildAnswerTipMessage(answerId: string): string {
+  return `nagexym:atip:${answerId}`;
+}
+
 let cachedParams: NetworkParams | null = null;
 
 export async function fetchNetworkParams(): Promise<NetworkParams> {
@@ -149,6 +154,27 @@ export async function sendTip(args: {
     recipientAddress: args.recipientAddress,
     amountXym: args.amountXym,
     message: buildTipMessage(args.postId),
+    params,
+  });
+  await announceTransaction(signed.payload);
+  return signed;
+}
+
+/**
+ * 回答への投げ銭: QA の回答者の受取アドレスへ送り、回答マーカーを付与する。
+ */
+export async function sendAnswerTip(args: {
+  privateKey: string;
+  recipientAddress: string;
+  amountXym: number;
+  answerId: string;
+}): Promise<SignedTip> {
+  const params = await fetchNetworkParams();
+  const signed = buildSignedTip({
+    privateKey: args.privateKey,
+    recipientAddress: args.recipientAddress,
+    amountXym: args.amountXym,
+    message: buildAnswerTipMessage(args.answerId),
     params,
   });
   await announceTransaction(signed.payload);

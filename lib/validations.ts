@@ -157,6 +157,17 @@ export function parseTags(raw: unknown): string[] {
   return [...new Set(normalized)].slice(0, 10);
 }
 
+// QA への回答投稿。contentHTML はサーバー側で必ずサニタイズしてから保存する。
+export const answerSchema = z.object({
+  postId: z.string().min(1),
+  contentHTML: z
+    .string()
+    .min(1, "回答を入力してください")
+    .max(200_000, "回答が長すぎます"),
+});
+
+export type AnswerInput = z.infer<typeof answerSchema>;
+
 export const commentSchema = z.object({
   postId: z.string().min(1),
   body: z
@@ -179,9 +190,11 @@ export const walletAddressSchema = z.object({
 
 export type WalletAddressInput = z.infer<typeof walletAddressSchema>;
 
-// 投げ銭の記録。toAddress はサーバー側で記事著者から決めるため受け取らない。
+// 投げ銭の記録。toAddress はサーバー側で記事著者（または回答者）から決めるため受け取らない。
+// answerId がある場合は QA 回答への投げ銭として扱う。
 export const tipSchema = z.object({
   postId: z.string().min(1),
+  answerId: z.string().min(1).optional(),
   txHash: z.string().regex(/^[0-9A-Fa-f]{64}$/, "txHash の形式が正しくありません"),
   fromAddress: z
     .string()

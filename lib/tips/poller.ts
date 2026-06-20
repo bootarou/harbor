@@ -16,6 +16,8 @@ import { notify } from "@/lib/notifications";
 
 const TRANSFER_TYPE = 16724; // 0x4154 TransferTransaction
 const TIP_MARKER = /nagexym:tip:([A-Za-z0-9_-]+)/;
+// 回答への投げ銭マーカー（記事への投げ銭 nagexym:tip: とは別系統）。
+const ANSWER_TIP_MARKER = /nagexym:atip:([A-Za-z0-9_-]+)/;
 
 type RestTransaction = {
   meta?: { hash?: string };
@@ -81,6 +83,42 @@ export function parseTipTransaction(
   return { txHash: hash.toUpperCase(), postId, fromAddress, amountXym };
 }
 
+export type ParsedAnswerTip = {
+  txHash: string;
+  answerId: string;
+  fromAddress: string;
+  amountXym: number;
+};
+
+/** REST のトランザクション 1 件を「回答への投げ銭」としてパースする（純粋関数）。 */
+export function parseAnswerTipTransaction(
+  item: RestTransaction,
+  currencyMosaicId: string,
+  networkType: number
+): ParsedAnswerTip | null {
+  const tx = item.transaction;
+  const hash = item.meta?.hash;
+  if (!tx || !hash || !tx.signerPublicKey) return null;
+
+  const message = decodeMessage(tx.message);
+  const marker = ANSWER_TIP_MARKER.exec(message);
+  if (!marker) return null;
+  const answerId = marker[1];
+
+  const mosaic = (tx.mosaics ?? []).find(
+    (m) => m.id.toUpperCase() === currencyMosaicId
+  );
+  if (!mosaic) return null;
+  const amountXym = Number(mosaic.amount) / 1_000_000;
+
+  const fromAddress = Address.createFromPublicKey(
+    tx.signerPublicKey,
+    networkType
+  ).plain();
+
+  return { txHash: hash.toUpperCase(), answerId, fromAddress, amountXym };
+}
+
 export type PollResult = { scanned: number; confirmed: number; created: number };
 
 // 複数アドレスを連続でポーリングする際の間隔（ms）。
@@ -89,6 +127,94 @@ export const POLL_ADDRESS_INTERVAL_MS = 500;
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 回答への投げ銭 1 件を確定・記録する。宛先(address)が回答者の受取アドレスと
+ * 一致するもののみ採用。確定時に回答者へ通知する。
+ */
+async function confirmAnswerTip(
+  parsed: ParsedAnswerTip,
+  address: string,
+  jpyRateDec: Prisma.Decimal | null,
+  result: PollResult
+): Promise<void> {
+  const answer = await prisma.answer.findUnique({
+    where: { id: parsed.answerId },
+    select: {
+      id: true,
+      postId: true,
+      authorId: true,
+      author: { select: { xymAddress: true } },
+      post: { select: { title: true } },
+    },
+  });
+  if (!answer || answer.author.xymAddress !== address) return;
+
+  const fromUser = await prisma.user.findFirst({
+    where: { xymAddress: parsed.fromAddress },
+    select: { id: true },
+  });
+
+  const existing = await prisma.tip.findUnique({
+    where: { txHash: parsed.txHash },
+    select: { id: true, confirmed: true, jpyRate: true },
+  });
+
+  if (existing) {
+    if (!existing.confirmed) {
+      await prisma.tip.update({
+        where: { txHash: parsed.txHash },
+        data: {
+          confirmed: true,
+          confirmedAt: new Date(),
+          jpyRate: existing.jpyRate ?? jpyRateDec,
+        },
+      });
+      result.confirmed += 1;
+      await notify({
+        userId: answer.authorId,
+        type: "tip_received",
+        postId: answer.postId,
+        postTitle: answer.post.title,
+        amount: parsed.amountXym,
+        currency: "XYM",
+      });
+    }
+    return;
+  }
+
+  try {
+    await prisma.tip.create({
+      data: {
+        postId: answer.postId,
+        answerId: answer.id,
+        fromAddress: parsed.fromAddress,
+        toAddress: address,
+        amount: new Prisma.Decimal(parsed.amountXym),
+        txHash: parsed.txHash,
+        fromUserId: fromUser?.id ?? null,
+        confirmed: true,
+        jpyRate: jpyRateDec,
+      },
+    });
+    result.created += 1;
+    result.confirmed += 1;
+    await notify({
+      userId: answer.authorId,
+      type: "tip_received",
+      postId: answer.postId,
+      postTitle: answer.post.title,
+      amount: parsed.amountXym,
+      currency: "XYM",
+    });
+  } catch (e) {
+    if (
+      !(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+    ) {
+      throw e;
+    }
+  }
 }
 
 /** 指定アドレス宛の確定済み送金を取得し、該当する投げ銭を確定する。 */
@@ -109,6 +235,13 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
   const jpyRateDec = jpyRate != null ? new Prisma.Decimal(jpyRate) : null;
 
   for (const item of items) {
+    // 先に回答への投げ銭（nagexym:atip:）を判定する。
+    const parsedAnswer = parseAnswerTipTransaction(item, currencyId, networkType);
+    if (parsedAnswer) {
+      await confirmAnswerTip(parsedAnswer, address, jpyRateDec, result);
+      continue;
+    }
+
     const parsed = parseTipTransaction(item, currencyId, networkType);
     if (!parsed) continue;
 

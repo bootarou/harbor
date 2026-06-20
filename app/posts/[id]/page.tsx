@@ -6,6 +6,8 @@ import type { Metadata } from "next";
 import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
+import { AnswerForm } from "@/components/qa/answer-form";
+import { selectBestAnswer } from "@/app/answers/actions";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
 import { BookmarkButton } from "@/components/bookmark-button";
@@ -116,6 +118,7 @@ export default async function PostDetailPage({
       createdAt: true,
       publishAt: true,
       postType: true,
+      qaStatus: true,
       url: true,
       comment: true,
       ogpTitle: true,
@@ -150,6 +153,8 @@ export default async function PostDetailPage({
         },
       },
       tips: {
+        // 記事への投げ銭のみ（回答への投げ銭 answerId!=null は各回答カードで表示）。
+        where: { answerId: null },
         orderBy: { confirmedAt: "desc" },
         take: 10,
         select: {
@@ -171,7 +176,7 @@ export default async function PostDetailPage({
   }
 
   const tipAgg = await prisma.tip.aggregate({
-    where: { postId: post.id },
+    where: { postId: post.id, answerId: null },
     _sum: { amount: true },
     _count: true,
   });
@@ -235,6 +240,51 @@ export default async function PostDetailPage({
       })) !== null
     : false;
 
+  // ===== QA（質問・回答） =====
+  const isQa = post.postType === "qa";
+  // 回答一覧（ベストアンサーを最上部に固定 → 以降は投稿日時昇順）。
+  const answers = isQa
+    ? await prisma.answer.findMany({
+        where: { postId: post.id },
+        orderBy: [{ isBest: "desc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          contentHTML: true,
+          isBest: true,
+          createdAt: true,
+          authorId: true,
+          author: {
+            select: { id: true, displayName: true, avatarUrl: true, xymAddress: true },
+          },
+        },
+      })
+    : [];
+  // 各回答の投げ銭合計（確定/未確定問わず記録ベース）。
+  const answerTipRows =
+    answers.length > 0
+      ? await prisma.tip.groupBy({
+          by: ["answerId"],
+          where: { answerId: { in: answers.map((a) => a.id) } },
+          _sum: { amount: true },
+          _count: true,
+        })
+      : [];
+  const answerTipByid = new Map(
+    answerTipRows.map((r) => [
+      r.answerId as string,
+      { total: r._sum.amount ? Number(r._sum.amount) : 0, count: r._count },
+    ])
+  );
+  // 回答本文中のリンクカードをキャッシュからカードHTMLへ置換（保存済み・サニタイズ済み）。
+  const answerHtmlById = new Map(
+    await Promise.all(
+      answers.map(
+        async (a) =>
+          [a.id, await renderLinkCardsHtml(a.contentHTML)] as const
+      )
+    )
+  );
+
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <ViewTracker postId={post.id} />
@@ -258,6 +308,22 @@ export default async function PostDetailPage({
               有料 {post.priceAmount ? formatXym(Number(post.priceAmount)) : ""}{" "}
               {post.priceCurrency ?? "XYM"}
             </span>
+          )}
+          {isQa && (
+            <>
+              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+                Q&amp;A
+              </span>
+              {post.qaStatus === "answered" ? (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800 dark:bg-green-950 dark:text-green-200">
+                  解決済み
+                </span>
+              ) : (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  未回答
+                </span>
+              )}
+            </>
           )}
           {post.author.displayName}・{formatDate(post.createdAt)}
           <span className="text-gray-400">👁 {post.viewCount}</span>
@@ -406,6 +472,109 @@ export default async function PostDetailPage({
           </div>
         )}
       </article>
+
+      {isQa && (
+        <section className="mt-12">
+          <h2 className="mb-4 text-lg font-semibold">回答（{answers.length}）</h2>
+
+          <ul className="mb-8 flex flex-col gap-4">
+            {answers.map((answer) => {
+              const tip = answerTipByid.get(answer.id);
+              const canSelectBest =
+                isAuthor && currentUserId !== null && !answer.isBest;
+              return (
+                <li
+                  key={answer.id}
+                  className={`rounded-lg border p-4 ${
+                    answer.isBest
+                      ? "border-green-300 bg-green-50/50 dark:border-green-900 dark:bg-green-950/30"
+                      : "border-gray-200 dark:border-gray-800"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={answer.author.avatarUrl || "/avatar-placeholder.svg"}
+                        alt=""
+                        className="h-6 w-6 rounded-full object-cover"
+                      />
+                      <Link
+                        href={`/users/${answer.author.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {answer.author.displayName}
+                      </Link>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatDate(answer.createdAt)}
+                      </span>
+                    </div>
+                    {answer.isBest && (
+                      <span className="shrink-0 rounded-full bg-green-600 px-2 py-0.5 text-xs font-semibold text-white">
+                        🏆 ベストアンサー
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    className="prose prose-sm dark:prose-invert mt-3 max-w-none"
+                    dangerouslySetInnerHTML={{
+                      __html: answerHtmlById.get(answer.id) ?? "",
+                    }}
+                  />
+
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                      💴 {formatXym(tip?.total ?? 0)} XYM・{tip?.count ?? 0} 件
+                    </span>
+                    {canSelectBest && (
+                      <form action={selectBestAnswer}>
+                        <input type="hidden" name="answerId" value={answer.id} />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-green-600 px-3 py-1 text-xs font-semibold text-green-700 transition hover:bg-green-50 dark:text-green-300 dark:hover:bg-green-950"
+                        >
+                          ベストアンサーに選ぶ
+                        </button>
+                      </form>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <TipBox
+                      postId={post.id}
+                      answerId={answer.id}
+                      recipientAddress={answer.author.xymAddress}
+                      isAuthor={currentUserId === answer.authorId}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+            {answers.length === 0 && (
+              <li className="text-sm text-gray-500 dark:text-gray-400">
+                まだ回答はありません。最初の回答を投稿しましょう。
+              </li>
+            )}
+          </ul>
+
+          <h3 className="mb-2 text-sm font-semibold">回答を投稿する</h3>
+          {currentUserId ? (
+            <AnswerForm postId={post.id} />
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              回答するには{" "}
+              <Link
+                href={`/login?callbackUrl=/posts/${post.id}`}
+                className="underline"
+              >
+                ログイン
+              </Link>{" "}
+              してください。
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="mt-10">
         <ReactionBar

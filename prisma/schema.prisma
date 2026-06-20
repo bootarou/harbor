@@ -10,48 +10,49 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id                        String    @id @default(cuid())
   // ===== DID（Symbolアドレス）認証 =====
-  symbolAddress String? @unique // ログイン主識別子（DID address）。plain 39文字
-  did           String? // did:symbol:{network}:{address}
-  network       String? // testnet / mainnet
-  publicKey     String? // 署名検証用の公開鍵
-  lastLoginAt   DateTime?
+  symbolAddress             String?   @unique // ログイン主識別子（DID address）。plain 39文字
+  did                       String? // did:symbol:{network}:{address}
+  network                   String? // testnet / mainnet
+  publicKey                 String? // 署名検証用の公開鍵
+  lastLoginAt               DateTime?
   // ===== メール（任意・ログインIDではない） =====
-  email                     String?  @unique
-  emailVerified             Boolean  @default(false)
-  emailNotificationsEnabled Boolean  @default(false)
+  email                     String?   @unique
+  emailVerified             Boolean   @default(false)
+  emailNotificationsEnabled Boolean   @default(false)
   passwordHash              String? // 旧メール認証の名残（DID移行後は未使用）
   // ===== プロフィール =====
-  displayName     String
-  avatarUrl       String?
-  coverImage      String? // プロフィールのカバー画像（公開ページのバナー・OGP用）
-  bio             String?
-  xAccount        String?
-  websiteUrl      String? // SMD url
-  symbolNamespace String? // SMD namespace
-  profileSource   String? // "smd" 等
-  smdSyncedAt     DateTime?
-  xymAddress      String? // 受取アドレス（通常 symbolAddress と同一）
-  tokushoho       String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
-  salesTerms      String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
-  notificationsReadAt DateTime? // （旧）通知を最後に確認した時刻
-  notificationPrefs   Json? // 通知種別ごとの ON/OFF（未設定キーは既定値）
-  createdAt       DateTime @default(now())
+  displayName               String
+  avatarUrl                 String?
+  coverImage                String? // プロフィールのカバー画像（公開ページのバナー・OGP用）
+  bio                       String?
+  xAccount                  String?
+  websiteUrl                String? // SMD url
+  symbolNamespace           String? // SMD namespace
+  profileSource             String? // "smd" 等
+  smdSyncedAt               DateTime?
+  xymAddress                String? // 受取アドレス（通常 symbolAddress と同一）
+  tokushoho                 String? // 特定商取引法に基づく表記（テキスト/Markdown・HTML不可）
+  salesTerms                String? // 利用規約・販売条件（テキスト/Markdown・HTML不可）
+  notificationsReadAt       DateTime? // （旧）通知を最後に確認した時刻
+  notificationPrefs         Json? // 通知種別ごとの ON/OFF（未設定キーは既定値）
+  createdAt                 DateTime  @default(now())
 
-  posts     Post[]
-  comments  Comment[]
-  sentTips  Tip[]      @relation("SentTips")
-  purchases Purchase[] @relation("Purchases")
-  reactions Reaction[] @relation("Reactions")
-  reports   Report[]   @relation("Reports")
-  thanksSent     Thanks[] @relation("ThanksSent")
-  thanksReceived Thanks[] @relation("ThanksReceived")
+  posts          Post[]
+  comments       Comment[]
+  sentTips       Tip[]      @relation("SentTips")
+  purchases      Purchase[] @relation("Purchases")
+  reactions      Reaction[] @relation("Reactions")
+  reports        Report[]   @relation("Reports")
+  thanksSent     Thanks[]   @relation("ThanksSent")
+  thanksReceived Thanks[]   @relation("ThanksReceived")
 
-  following Follow[] @relation("Following") // この人がフォローしている関係
-  followers Follow[] @relation("Followers") // この人がフォローされている関係
-  bookmarks Bookmark[]
+  following     Follow[]       @relation("Following") // この人がフォローしている関係
+  followers     Follow[]       @relation("Followers") // この人がフォローされている関係
+  bookmarks     Bookmark[]
   notifications Notification[]
+  answers       Answer[]       @relation("Answers")
 }
 
 // サイト内通知。表示用にアクター名・記事タイトル等をスナップショット保存（FKに依存しない）。
@@ -138,18 +139,20 @@ model Follow {
 }
 
 model Post {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   authorId    String
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   title       String
-  contentHTML String   @db.Text // 通常公開: 全文 / 販売公開: 試し読み(無料)部分 / URL投稿: 未使用
+  contentHTML String    @db.Text // 通常公開: 全文 / 販売公開: 試し読み(無料)部分 / URL投稿: 未使用
   coverImage  String?
-  published   Boolean  @default(false)
-  tags        String[] @default([])
+  published   Boolean   @default(false)
+  tags        String[]  @default([])
   publishAt   DateTime? // 公開日時。未来なら未公開扱い
 
-  // 投稿タイプ: "article"（通常記事） / "external_url"（外部URL共有）
-  postType    String  @default("article")
+  // 投稿タイプ: "article"（通常記事） / "external_url"（外部URL共有） / "qa"（質問・回答）
+  postType       String  @default("article")
+  // QA投稿の状態: "open"（未回答） / "answered"（ベストアンサー選定済み）。qa以外は null。
+  qaStatus       String?
   // 外部URL投稿用
   url            String?
   comment        String? @db.Text // 投稿者コメント（プレーンテキスト・表示時エスケープ）
@@ -177,6 +180,7 @@ model Post {
   reports   Report[]
   thanks    Thanks[]
   bookmarks Bookmark[]
+  answers   Answer[]
 
   @@index([authorId])
   @@index([published, createdAt])
@@ -273,6 +277,9 @@ model Tip {
   id          String   @id @default(cuid())
   postId      String
   post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  // 回答への投げ銭の場合に設定（記事への投げ銭は null）。QA の回答(Answer)宛て。
+  answerId    String?
+  answer      Answer?  @relation(fields: [answerId], references: [id], onDelete: SetNull)
   fromAddress String
   toAddress   String
   amount      Decimal
@@ -289,5 +296,24 @@ model Tip {
   confirmedAt DateTime @default(now())
 
   @@index([postId])
+  @@index([answerId])
   @@index([fromUserId])
+}
+
+// QA 投稿（postType="qa"）への回答。Comment とは別物（こちらは「回答」）。
+model Answer {
+  id          String   @id @default(cuid())
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation("Answers", fields: [authorId], references: [id], onDelete: Cascade)
+  contentHTML String   @db.Text // 保存時に sanitize-html 済み
+  isBest      Boolean  @default(false) // 質問者が選んだベストアンサー
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tips Tip[]
+
+  @@index([postId])
+  @@index([postId, isBest])
 }

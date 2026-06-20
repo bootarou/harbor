@@ -42,7 +42,7 @@ function wrapLines(
 
 type PostInitial = {
   id?: string;
-  postType: "article" | "external_url";
+  postType: "article" | "external_url" | "qa";
   title: string;
   authorName: string;
   contentHTML: string;
@@ -69,6 +69,8 @@ export function PostForm({ initial }: { initial: PostInitial }) {
 
   const [postType, setPostType] = useState(initial.postType);
   const isUrl = postType === "external_url";
+  const isQa = postType === "qa";
+  const isArticle = postType === "article";
 
   const [title, setTitle] = useState(initial.title);
   const [contentHTML, setContentHTML] = useState(initial.contentHTML);
@@ -306,6 +308,19 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           />
           外部コンテンツのURLを共有する
         </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="postTypeRadio"
+            checked={isQa}
+            onChange={() => {
+              setPostType("qa");
+              setPaid(false);
+              markDirty();
+            }}
+          />
+          QA（質問を投稿して回答を募る）
+        </label>
       </fieldset>
 
       {!isUrl && (
@@ -446,7 +461,11 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           <input type="hidden" name="contentHTML" value={contentHTML} />
           <input type="hidden" name="coverImage" value={coverImage} />
           <input type="hidden" name="paidHtml" value={paidHtml} />
-          <input type="hidden" name="paid" value={paid ? "true" : "false"} />
+          <input
+            type="hidden"
+            name="paid"
+            value={isArticle && paid ? "true" : "false"}
+          />
 
           <div className="flex flex-col gap-2 text-sm">
             <span>カバー画像</span>
@@ -501,7 +520,13 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           </div>
 
           <div className="flex flex-col gap-1 text-sm">
-            <span>{paid ? "試し読み（無料で公開する部分）" : "本文"}</span>
+            <span>
+              {isQa
+                ? "質問の内容"
+                : paid
+                  ? "試し読み（無料で公開する部分）"
+                  : "本文"}
+            </span>
             <TiptapEditor
               initialHTML={initial.contentHTML}
               onChange={(html) => {
@@ -511,6 +536,8 @@ export function PostForm({ initial }: { initial: PostInitial }) {
             />
           </div>
 
+          {isArticle && (
+          <>
           <fieldset className="flex flex-col gap-2 text-sm">
             <legend className="mb-1 font-semibold">公開方式</legend>
             <label className="flex items-center gap-2">
@@ -557,6 +584,8 @@ export function PostForm({ initial }: { initial: PostInitial }) {
                 <span>有料記事・購読権の販売に関する必要な法令対応は、販売者である投稿者自身の責任で行います。</span>
               </label>
             </div>
+          )}
+          </>
           )}
         </>
       )}

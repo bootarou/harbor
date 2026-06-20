@@ -47,6 +47,7 @@ export type FeedPost = {
   priceAmount: number | null;
   priceCurrency: string | null;
   postType: string;
+  qaStatus: string | null;
   comment: string | null;
   ogpTitle: string | null;
   ogpImageUrl: string | null;
@@ -84,12 +85,14 @@ export async function getPostsPage(opts: {
       priceAmount: true,
       priceCurrency: true,
       postType: true,
+      qaStatus: true,
       comment: true,
       ogpTitle: true,
       ogpImageUrl: true,
       ogpSiteName: true,
       author: { select: { displayName: true, avatarUrl: true } },
-      tips: { select: { amount: true } },
+      // 記事への投げ銭のみ集計（回答への投げ銭 answerId!=null は除外）。
+      tips: { where: { answerId: null }, select: { amount: true } },
     },
   });
 
@@ -110,6 +113,7 @@ export async function getPostsPage(opts: {
     priceAmount: r.priceAmount != null ? Number(r.priceAmount) : null,
     priceCurrency: r.priceCurrency,
     postType: r.postType,
+    qaStatus: r.qaStatus,
     comment: r.comment,
     ogpTitle: r.ogpTitle,
     ogpImageUrl: r.ogpImageUrl,

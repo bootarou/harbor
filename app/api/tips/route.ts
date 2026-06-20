@@ -30,35 +30,69 @@ export async function POST(request: Request) {
     );
   }
 
-  const { postId, txHash, anonymous } = parsed.data;
+  const { postId, answerId, txHash, anonymous } = parsed.data;
 
-  const post = await prisma.post.findUnique({
-    where: { id: postId },
-    select: { published: true, authorId: true, author: { select: { xymAddress: true } } },
-  });
-  if (!post || !post.published) {
-    return NextResponse.json({ error: "記事が見つかりません" }, { status: 404 });
-  }
-  const toAddress = post.author.xymAddress;
-  if (!toAddress) {
-    return NextResponse.json(
-      { error: "著者がXYMアドレスを設定していません" },
-      { status: 400 }
-    );
-  }
-  if (post.authorId === session.user.id) {
-    return NextResponse.json(
-      { error: "自分の記事には投げ銭できません" },
-      { status: 400 }
-    );
+  // 投げ銭の対象（記事 or 回答）を特定し、送金先アドレス・本人除外・マーカーを決める。
+  let toAddress: string;
+  let requiredMarker: string;
+  if (answerId) {
+    // 回答への投げ銭: 宛先は回答者、マーカーは回答用。postId は本文の所属記事と一致を確認。
+    const answer = await prisma.answer.findUnique({
+      where: { id: answerId },
+      select: {
+        postId: true,
+        authorId: true,
+        author: { select: { xymAddress: true } },
+        post: { select: { published: true } },
+      },
+    });
+    if (!answer || answer.postId !== postId || !answer.post.published) {
+      return NextResponse.json({ error: "回答が見つかりません" }, { status: 404 });
+    }
+    if (!answer.author.xymAddress) {
+      return NextResponse.json(
+        { error: "回答者がXYMアドレスを設定していません" },
+        { status: 400 }
+      );
+    }
+    if (answer.authorId === session.user.id) {
+      return NextResponse.json(
+        { error: "自分の回答には投げ銭できません" },
+        { status: 400 }
+      );
+    }
+    toAddress = answer.author.xymAddress;
+    requiredMarker = `nagexym:atip:${answerId}`;
+  } else {
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      select: { published: true, authorId: true, author: { select: { xymAddress: true } } },
+    });
+    if (!post || !post.published) {
+      return NextResponse.json({ error: "記事が見つかりません" }, { status: 404 });
+    }
+    if (!post.author.xymAddress) {
+      return NextResponse.json(
+        { error: "著者がXYMアドレスを設定していません" },
+        { status: 400 }
+      );
+    }
+    if (post.authorId === session.user.id) {
+      return NextResponse.json(
+        { error: "自分の記事には投げ銭できません" },
+        { status: 400 }
+      );
+    }
+    toAddress = post.author.xymAddress;
+    requiredMarker = `nagexym:tip:${postId}`;
   }
 
-  // オンチェーン検証（マーカー・宛先=著者・最低額）。金額/送金元は実トランザクションの値を採用。
+  // オンチェーン検証（マーカー・宛先=著者or回答者・最低額）。金額/送金元は実トランザクションの値を採用。
   let verified;
   try {
     verified = await verifyTransferByHash({
       txHash,
-      requiredMarker: `nagexym:tip:${postId}`,
+      requiredMarker,
       recipientAddress: toAddress,
       minAmountXym: TIP_MIN_XYM,
     });
@@ -95,6 +129,7 @@ export async function POST(request: Request) {
     const tip = await prisma.tip.create({
       data: {
         postId,
+        answerId: answerId ?? null,
         fromAddress: verified.senderAddress,
         toAddress,
         amount: new Prisma.Decimal(verified.amount),

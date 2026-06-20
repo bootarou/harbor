@@ -10,7 +10,8 @@ export type NotificationType =
   | "reaction"
   | "purchase"
   | "new_post"
-  | "follow";
+  | "follow"
+  | "qa_best_answer";
 
 // 種別の定義（ラベルと既定 ON/OFF）。設定画面・正規化に使う。
 export const NOTIFICATION_TYPES: {
@@ -24,6 +25,7 @@ export const NOTIFICATION_TYPES: {
   { key: "purchase", label: "記事が売れた", default: true },
   { key: "new_post", label: "フォロー中の著者が新記事を投稿", default: false },
   { key: "follow", label: "フォロワーが増えた", default: false },
+  { key: "qa_best_answer", label: "回答がベストアンサーに選ばれた", default: true },
 ];
 
 export type NotificationPrefs = Record<NotificationType, boolean>;
@@ -233,6 +235,11 @@ export function notificationText(n: {
       return { title: "新着記事", body: `${who} さんが「${post}」を投稿しました` };
     case "follow":
       return { title: "新しいフォロワー", body: `${who} さんにフォローされました` };
+    case "qa_best_answer":
+      return {
+        title: "ベストアンサーに選ばれました 🏆",
+        body: `あなたの回答が「${post}」のベストアンサーに選ばれました`,
+      };
     default:
       return { title: "通知", body: post };
   }

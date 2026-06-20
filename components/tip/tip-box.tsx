@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
-import { sendTip } from "@/lib/wallet/transfer";
+import { sendTip, sendAnswerTip } from "@/lib/wallet/transfer";
 import { checkSufficientBalance } from "@/lib/wallet/symbol";
 
 const MIN = 0.1;
@@ -14,13 +14,17 @@ const STEP = 0.1;
 
 export function TipBox({
   postId,
+  answerId,
   recipientAddress,
   isAuthor,
 }: {
   postId: string;
+  // 指定時は QA 回答への投げ銭として扱う（宛先は回答者）。
+  answerId?: string;
   recipientAddress: string | null;
   isAuthor: boolean;
 }) {
+  const isAnswer = answerId !== undefined;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(1);
@@ -64,19 +68,27 @@ export function TipBox({
       }
       // パスフレーズで秘密鍵を復号（メモリ上のみ）。
       const privateKey = await decryptPrivateKey(wallet, passphrase);
-      // 署名・アナウンス（クライアントで完結）。
-      const signed = await sendTip({
-        privateKey,
-        recipientAddress,
-        amountXym: amount,
-        postId,
-      });
+      // 署名・アナウンス（クライアントで完結）。回答への投げ銭は専用マーカーで送る。
+      const signed = answerId
+        ? await sendAnswerTip({
+            privateKey,
+            recipientAddress,
+            amountXym: amount,
+            answerId,
+          })
+        : await sendTip({
+            privateKey,
+            recipientAddress,
+            amountXym: amount,
+            postId,
+          });
       // 記録（控え）をサーバーへ。送るのは txHash 等の公開情報のみ。
       const res = await fetch("/api/tips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postId,
+          answerId,
           txHash: signed.hash,
           fromAddress: wallet.address,
           amount,
@@ -103,12 +115,14 @@ export function TipBox({
     } finally {
       setBusy(false);
     }
-  }, [amount, anonymous, passphrase, postId, recipientAddress, router]);
+  }, [amount, anonymous, passphrase, postId, answerId, recipientAddress, router]);
 
   if (isAuthor) {
     return (
       <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-        自分の記事には投げ銭できません。
+        {isAnswer
+          ? "自分の回答には投げ銭できません。"
+          : "自分の記事には投げ銭できません。"}
       </p>
     );
   }
@@ -116,7 +130,9 @@ export function TipBox({
   if (!recipientAddress) {
     return (
       <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-        この著者はまだウォレット（XYMアドレス）を設定していないため、投げ銭できません。
+        {isAnswer
+          ? "この回答者はまだウォレット（XYMアドレス）を設定していないため、投げ銭できません。"
+          : "この著者はまだウォレット（XYMアドレス）を設定していないため、投げ銭できません。"}
       </p>
     );
   }
@@ -153,7 +169,7 @@ export function TipBox({
           onClick={() => setOpen(true)}
           className="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
         >
-          💴 この記事に投げ銭する
+          {isAnswer ? "💴 この回答に投げ銭する" : "💴 この記事に投げ銭する"}
         </button>
       ) : (
         <div className="flex flex-col gap-4">
@@ -191,7 +207,7 @@ export function TipBox({
               <img src={qr} alt="送金先アドレスQR" className="h-24 w-24" />
             )}
             <div className="min-w-0 text-xs text-gray-500 dark:text-gray-400">
-              <p>送金先（著者）アドレス</p>
+              <p>送金先（{isAnswer ? "回答者" : "著者"}）アドレス</p>
               <p className="mt-1 break-all font-mono">{recipientAddress}</p>
               <p className="mt-1">別のウォレットからQRで送ることもできます。</p>
             </div>
