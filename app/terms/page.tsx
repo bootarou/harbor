@@ -5,7 +5,7 @@ export default function TermsPage() {
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
       <h1 className="mb-2 text-2xl font-bold">利用規約</h1>
       <p className="mb-8 text-xs text-gray-500 dark:text-gray-400">
-        最終更新日: 2026-06-19
+        最終更新日: 2026-06-20
       </p>
 
       <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -66,10 +66,32 @@ export default function TermsPage() {
             ヘイトスピーチ、差別的表現、特定の個人・集団への誹謗中傷
           </li>
           <li>暴力・残虐なコンテンツの投稿・共有</li>
-          <li>スパム、無差別な広告・宣伝行為</li>
-          <li>同一内容の大量投稿</li>
-          <li>自己的のコンテンツ・活動と無関係な商品・サービスの宣伝を目的とした投稿</li>
+          <li>スパム・同一内容の大量投稿</li>
+          <li>
+            自己のコンテンツ・活動と無関係な商品・サービスの宣伝を目的とした投稿
+          </li>
           <li>他ユーザーのコメント欄を利用した広告・勧誘行為</li>
+          <li>
+            <strong>
+              無登録の暗号資産交換業者・金融商品取引業者・資金移動業者の勧誘・宣伝
+            </strong>
+          </li>
+          <li>
+            <strong>
+              「必ず儲かる」「確実に利益が出る」等の断定的な表現を用いた投資・副業の勧誘
+            </strong>
+          </li>
+          <li>
+            <strong>マルチ商法・連鎖販売取引（ねずみ講）の勧誘</strong>
+          </li>
+          <li>
+            <strong>
+              実態を秘匿した高額報酬募集（いわゆる「闇バイト」等、犯罪収益移転防止法その他の法令に抵触するおそれのある勧誘を含む）
+            </strong>
+          </li>
+          <li>
+            <strong>著名人・企業等になりすました信用を利用する勧誘行為</strong>
+          </li>
         </ul>
 
         <h2>第5条（コンテンツ）</h2>
