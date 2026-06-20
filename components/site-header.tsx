@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { purgeAwareSignOut } from "@/lib/wallet/purge-session";
 
 function NotificationBadge({ count }: { count: number }) {
   if (count <= 0) return null;
@@ -94,7 +95,7 @@ export function SiteHeader() {
               ))}
               <button
                 type="button"
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => purgeAwareSignOut({ callbackUrl: "/" })}
                 className="hover:underline"
               >
                 ログアウト
@@ -176,7 +177,7 @@ export function SiteHeader() {
                   type="button"
                   onClick={(e) => {
                     closeDetails(e);
-                    signOut({ callbackUrl: "/" });
+                    purgeAwareSignOut({ callbackUrl: "/" });
                   }}
                   className="rounded-md px-2 py-2 text-left hover:underline"
                 >

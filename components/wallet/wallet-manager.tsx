@@ -21,6 +21,9 @@ import { shortAddress } from "@/lib/did";
 import { formatXym } from "@/lib/format";
 import { CreateWallet } from "@/components/wallet/create-wallet";
 import { RestoreWallet } from "@/components/wallet/restore-wallet";
+import { WalletQrExport } from "@/components/wallet/wallet-qr-export";
+import { WalletQrImport } from "@/components/wallet/wallet-qr-import";
+import { WalletNfc } from "@/components/wallet/wallet-nfc";
 
 type Mode = "idle" | "create" | "restore";
 
@@ -118,6 +121,16 @@ export function WalletManager({
         {mode === "restore" && (
           <RestoreWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
         )}
+
+        {/* 別端末からQR/NFCで取り込む（対応端末ではカメラ読み取り、それ以外は貼り付け） */}
+        {mode === "idle" && (
+          <WalletQrImport
+            onImported={() => {
+              refresh();
+              router.refresh();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -150,12 +163,24 @@ export function WalletManager({
         <RestoreWallet onComplete={handleComplete} onCancel={() => setMode("idle")} />
       )}
 
+      {/* 別端末からQR/NFCで取り込む */}
+      <WalletQrImport
+        onImported={() => {
+          refresh();
+          router.refresh();
+        }}
+      />
+
       {/* アクティブなウォレットの詳細 */}
       {active && (
         <ExistingWallet
           key={active.address}
           wallet={active}
           serverAddress={serverAddress}
+          onAccountRemoved={() => {
+            refresh();
+            router.refresh();
+          }}
         />
       )}
     </div>
@@ -325,9 +350,11 @@ function AccountsPanel({
 function ExistingWallet({
   wallet,
   serverAddress,
+  onAccountRemoved,
 }: {
   wallet: EncryptedWallet;
   serverAddress: string | null;
+  onAccountRemoved: () => void;
 }) {
   const router = useRouter();
   const [addrSynced, setAddrSynced] = useState(serverAddress === wallet.address);
@@ -513,6 +540,10 @@ function ExistingWallet({
           </div>
         )}
       </div>
+
+      {/* 高度なウォレット運用（対応端末でのオプション機能） */}
+      <WalletQrExport wallet={wallet} />
+      <WalletNfc wallet={wallet} onAccountRemoved={onAccountRemoved} />
     </div>
   );
 }
