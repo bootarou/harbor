@@ -1,35 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useState,
+} from "react";
 
 const MAX_TAGS = 10;
 const MAX_LEN = 30;
 
+// 親コンポーネントから命令的にタグを追加するためのハンドル。
+export type TagInputHandle = { addTag: (raw: string) => void };
+
 // チップ式のタグ入力。Enter（またはカンマ）で確定、× で削除。
 // 値は hidden input(name) に JSON 配列で格納し、サーバーアクションへ渡す。
-export function TagInput({
-  name,
-  initialTags,
-  onChange,
-}: {
-  name: string;
-  initialTags: string[];
-  onChange?: () => void;
-}) {
+export const TagInput = forwardRef<
+  TagInputHandle,
+  {
+    name: string;
+    initialTags: string[];
+    onChange?: () => void;
+  }
+>(function TagInput({ name, initialTags, onChange }, ref) {
   const [tags, setTags] = useState<string[]>(initialTags);
   const [input, setInput] = useState("");
 
+  // タグを1件追加（空・重複・上限超過は無視）。入力欄はクリアしない。
+  // 関数型更新で最新stateを参照するため、命令的呼び出しでも安全。
+  const insertTag = useCallback(
+    (raw: string) => {
+      const value = raw.trim().slice(0, MAX_LEN);
+      if (!value) return;
+      setTags((prev) =>
+        prev.length >= MAX_TAGS || prev.includes(value)
+          ? prev
+          : [...prev, value]
+      );
+      onChange?.();
+    },
+    [onChange]
+  );
+
+  // 親から正規化ドメイン等を追加できるよう addTag を公開する。
+  useImperativeHandle(ref, () => ({ addTag: insertTag }), [insertTag]);
+
   function addTag(raw: string) {
-    const value = raw.trim().slice(0, MAX_LEN);
-    if (!value) return;
-    if (tags.length >= MAX_TAGS) return;
-    if (tags.includes(value)) {
-      setInput("");
-      return;
-    }
-    setTags([...tags, value]);
+    insertTag(raw);
     setInput("");
-    onChange?.();
   }
 
   function removeTag(target: string) {
@@ -86,4 +104,4 @@ export function TagInput({
       <input type="hidden" name={name} value={JSON.stringify(tags)} />
     </div>
   );
-}
+});

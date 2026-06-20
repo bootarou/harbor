@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { savePost, type PostFormState } from "@/app/posts/actions";
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
-import { TagInput } from "@/components/tag-input";
+import { TagInput, type TagInputHandle } from "@/components/tag-input";
 
 type Ogp = {
   title: string;
@@ -79,6 +79,7 @@ export function PostForm({ initial }: { initial: PostInitial }) {
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [coverError, setCoverError] = useState<string | null>(null);
   const coverRef = useRef<HTMLInputElement>(null);
+  const tagInputRef = useRef<TagInputHandle>(null);
 
   // URL投稿
   const [url, setUrl] = useState(initial.url);
@@ -255,6 +256,16 @@ export function PostForm({ initial }: { initial: PostInitial }) {
     }
     setOgp(data.ogp);
     setDirty(true);
+    // 取得元の正規化ドメイン（www除去・小文字化）を削除可能なタグ候補として追加。
+    // 表記ブレを抑える狙い。既存・重複・上限超過時は TagInput 側で無視される。
+    try {
+      const host = new URL(url.trim()).hostname
+        .replace(/^www\./, "")
+        .toLowerCase();
+      if (host) tagInputRef.current?.addTag(host);
+    } catch {
+      /* URL生成失敗時は何もしない */
+    }
   }
 
   return (
@@ -315,8 +326,6 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           />
         </label>
       )}
-
-      <TagInput name="tags" initialTags={initial.tags} onChange={markDirty} />
 
       {/* ===== URL投稿 ===== */}
       {isUrl && (
@@ -423,6 +432,13 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           </div>
         </div>
       )}
+
+      <TagInput
+        ref={tagInputRef}
+        name="tags"
+        initialTags={initial.tags}
+        onChange={markDirty}
+      />
 
       {/* ===== 通常記事 ===== */}
       {!isUrl && (
