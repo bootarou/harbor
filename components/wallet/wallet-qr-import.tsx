@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 import {
   decryptPrivateKey,
   WebCryptoUnavailableError,
@@ -35,6 +36,8 @@ export function WalletQrImport({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // QR解析用のオフスクリーンキャンバス（毎フレーム描画して jsqr に渡す）。
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     // 機能検出はマウント後に行い、SSR とのハイドレーション不一致を避ける。
@@ -101,18 +104,25 @@ export function WalletQrImport({
       video.srcObject = stream;
       await video.play();
 
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-      timerRef.current = setInterval(async () => {
-        if (!videoRef.current) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          const raw = codes[0]?.rawValue;
-          if (raw) {
-            stopCamera();
-            handleScannedText(raw);
-          }
-        } catch {
-          /* 1フレームの検出失敗は無視して次フレームへ */
+      // 毎フレーム、映像をキャンバスへ描画して jsqr で QR を解析する（BarcodeDetector 非依存）。
+      const canvas = canvasRef.current ?? document.createElement("canvas");
+      canvasRef.current = canvas;
+      timerRef.current = setInterval(() => {
+        const v = videoRef.current;
+        if (!v || v.readyState < 2) return; // 映像が十分にデコードされるまで待つ
+        const w = v.videoWidth;
+        const h = v.videoHeight;
+        if (!w || !h) return;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.drawImage(v, 0, 0, w, h);
+        const img = ctx.getImageData(0, 0, w, h);
+        const code = jsQR(img.data, w, h, { inversionAttempts: "dontInvert" });
+        if (code?.data) {
+          stopCamera();
+          handleScannedText(code.data);
         }
       }, 300);
     } catch (e) {

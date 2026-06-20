@@ -6,21 +6,16 @@ export function isNfcSupported(): boolean {
   return typeof window !== "undefined" && "NDEFReader" in window;
 }
 
-/** Barcode Detection API（QR解析）に対応しているか。 */
-export function isBarcodeDetectorSupported(): boolean {
-  return typeof window !== "undefined" && "BarcodeDetector" in window;
-}
-
 /**
- * カメラでのQR読み取りが実際に使えるか。
- * BarcodeDetector に加え、secure context（HTTPS/localhost）と getUserMedia が必要。
+ * カメラでのQR読み取りが使えるか。
+ * QR解析は jsqr（純JS）で行うため BarcodeDetector は不要。
+ * secure context（HTTPS/localhost）と getUserMedia があれば、iPhone Safari 含め利用可能。
  * 非HTTPS（http://192.168.x.x 等）では navigator.mediaDevices が無く、権限要求前に失敗する。
  */
 export function isCameraScanSupported(): boolean {
   return (
     typeof window !== "undefined" &&
     window.isSecureContext === true &&
-    "BarcodeDetector" in window &&
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices &&
     typeof navigator.mediaDevices.getUserMedia === "function"

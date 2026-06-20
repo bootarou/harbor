@@ -78,19 +78,4 @@ declare class NDEFReader extends EventTarget {
   ): void;
 }
 
-interface DetectedBarcode {
-  readonly rawValue: string;
-  readonly format: string;
-  readonly boundingBox: DOMRectReadOnly;
-  readonly cornerPoints: ReadonlyArray<{ x: number; y: number }>;
-}
-
-interface BarcodeDetectorOptions {
-  formats?: string[];
-}
-
-declare class BarcodeDetector {
-  constructor(options?: BarcodeDetectorOptions);
-  static getSupportedFormats(): Promise<string[]>;
-  detect(source: ImageBitmapSource): Promise<DetectedBarcode[]>;
-}
+// QR解析は jsqr（純JS）で行うため、BarcodeDetector の型は不要（削除済み）。
