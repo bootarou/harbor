@@ -9,7 +9,7 @@ import {
 } from "@/lib/wallet/crypto";
 import { addWallet } from "@/lib/wallet/storage";
 import { parseTransferredWallet } from "@/lib/wallet/portable";
-import { isBarcodeDetectorSupported } from "@/lib/wallet/capabilities";
+import { isCameraScanSupported } from "@/lib/wallet/capabilities";
 import { shortAddress } from "@/lib/did";
 
 type Step = "idle" | "scanning" | "paste" | "verify" | "done";
@@ -39,7 +39,7 @@ export function WalletQrImport({
   useEffect(() => {
     // 機能検出はマウント後に行い、SSR とのハイドレーション不一致を避ける。
     /* eslint-disable-next-line react-hooks/set-state-in-effect */
-    setSupported(isBarcodeDetectorSupported());
+    setSupported(isCameraScanSupported());
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -74,6 +74,16 @@ export function WalletQrImport({
 
   const startScan = useCallback(async () => {
     setError(null);
+    // secure context（HTTPS/localhost）でないと getUserMedia は使えない（権限要求前に失敗する）。
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setError(
+        "カメラはHTTPS接続でのみ使えます（http://192.168.x.x のようなLAN接続では起動できません）。手入力で貼り付けてください。"
+      );
+      return;
+    }
     setStep("scanning");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -84,6 +94,8 @@ export function WalletQrImport({
       const video = videoRef.current;
       if (!video) {
         stopCamera();
+        setStep("idle");
+        setError("カメラ映像を表示できませんでした。手入力で貼り付けてください。");
         return;
       }
       video.srcObject = stream;
@@ -103,11 +115,16 @@ export function WalletQrImport({
           /* 1フレームの検出失敗は無視して次フレームへ */
         }
       }, 300);
-    } catch {
+    } catch (e) {
       stopCamera();
       setStep("idle");
+      const name = e instanceof Error ? e.name : "";
       setError(
-        "カメラを起動できませんでした。カメラの許可を確認するか、手入力で貼り付けてください。"
+        name === "NotAllowedError"
+          ? "カメラの使用が許可されませんでした。ブラウザの権限設定を確認してください。手入力でも取り込めます。"
+          : name === "NotFoundError"
+            ? "カメラが見つかりませんでした。手入力で貼り付けてください。"
+            : "カメラを起動できませんでした（HTTPS接続が必要です）。手入力で貼り付けてください。"
       );
     }
   }, [handleScannedText, stopCamera]);
@@ -171,26 +188,34 @@ export function WalletQrImport({
       )}
 
       {step === "idle" && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {supported && (
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            {supported && (
+              <button
+                type="button"
+                onClick={startScan}
+                className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              >
+                カメラで読み取る
+              </button>
+            )}
             <button
               type="button"
-              onClick={startScan}
-              className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              onClick={() => {
+                setError(null);
+                setStep("paste");
+              }}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700"
             >
-              カメラで読み取る
+              手入力で貼り付け
             </button>
+          </div>
+          {!supported && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              ※ カメラ読み取りはHTTPS接続の対応端末（Android Chrome等）でのみ使えます。
+              http://192.168.x.x のようなLAN接続では使えないため、手入力で貼り付けてください。
+            </p>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setStep("paste");
-            }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700"
-          >
-            手入力で貼り付け
-          </button>
         </div>
       )}
 
