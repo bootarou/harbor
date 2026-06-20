@@ -157,6 +157,31 @@ export function parseTags(raw: unknown): string[] {
   return [...new Set(normalized)].slice(0, 10);
 }
 
+// アンケートの選択肢上限・1選択肢の文字数上限。
+export const POLL_MAX_OPTIONS = 10;
+export const POLL_MAX_LABEL_LEN = 80;
+
+// アンケートの選択肢配列に正規化する。
+// フォームからは JSON 配列文字列で渡る。空・空白のみは除去し、重複（完全一致）も除く。
+// 返り値は 0 件（アンケートなし）または 2〜POLL_MAX_OPTIONS 件。1 件だけは呼び出し側で弾く。
+export function parsePollOptions(raw: unknown): string[] {
+  let list: string[] = [];
+  if (Array.isArray(raw)) {
+    list = raw.map((t) => String(t));
+  } else if (typeof raw === "string" && raw.trim().startsWith("[")) {
+    try {
+      const arr: unknown = JSON.parse(raw);
+      if (Array.isArray(arr)) list = arr.map((t) => String(t));
+    } catch {
+      list = [];
+    }
+  }
+  const normalized = list
+    .map((t) => t.trim().slice(0, POLL_MAX_LABEL_LEN))
+    .filter(Boolean);
+  return [...new Set(normalized)].slice(0, POLL_MAX_OPTIONS);
+}
+
 // QA への回答投稿。contentHTML はサーバー側で必ずサニタイズしてから保存する。
 export const answerSchema = z.object({
   postId: z.string().min(1),

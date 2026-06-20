@@ -47,6 +47,9 @@ export default async function NewPostPage() {
           comment: "",
           tipsEnabled: false,
           ogp: null,
+          pollOptions: [],
+          pollClosesAt: "",
+          pollLocked: false,
         }}
       />
     </main>

@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizePostHtml } from "@/lib/sanitize";
-import { parseTags, postSchema } from "@/lib/validations";
+import { parseTags, parsePollOptions, postSchema } from "@/lib/validations";
 import { notifyFollowersNewPost } from "@/lib/notifications";
 import { isOwnImageUrl, rehostOgImage } from "@/lib/og-image";
 import { upsertLinkPreviewsFromHtml } from "@/lib/link-preview";
@@ -43,10 +43,36 @@ export async function savePost(
     if (!Number.isNaN(d.getTime())) publishAtDate = d;
   }
 
+  // ===== アンケート（任意・全投稿タイプ共通）=====
+  const pollOptions = parsePollOptions(formData.get("pollOptions"));
+  if (pollOptions.length === 1) {
+    return { error: "アンケートの選択肢は2つ以上にしてください。" };
+  }
+  const pollClosesAtRaw = str("pollClosesAt");
+  let pollClosesAt: Date | null = null;
+  if (pollOptions.length >= 2 && pollClosesAtRaw.trim() !== "") {
+    const d = new Date(pollClosesAtRaw);
+    if (!Number.isNaN(d.getTime())) pollClosesAt = d;
+  }
+
+  // 選択肢を反映する（作成・更新共通）。既に投票があれば選択肢は変更しない（票の整合性保護）。
+  // 締め切り(pollClosesAt)は Post 本体に保存されるため、ここでは選択肢のみ扱う。
+  const applyPollOptions = async (pid: string): Promise<void> => {
+    const voteCount = await prisma.pollVote.count({ where: { postId: pid } });
+    if (voteCount > 0) return;
+    await prisma.pollOption.deleteMany({ where: { postId: pid } });
+    if (pollOptions.length >= 2) {
+      await prisma.pollOption.createMany({
+        data: pollOptions.map((label, i) => ({ postId: pid, label, order: i })),
+      });
+    }
+  };
+
   // 所有権チェック付きの保存（作成/更新を共通化）。
+  // 成功時は { id } を、失敗時は { error } を返す。
   const persist = async (
     data: Prisma.PostUncheckedCreateInput
-  ): Promise<PostFormState | null> => {
+  ): Promise<{ id?: string; error?: string }> => {
     if (typeof postId === "string" && postId.length > 0) {
       const existing = await prisma.post.findUnique({
         where: { id: postId },
@@ -60,30 +86,30 @@ export async function savePost(
       const { qaStatus: _omit, ...updateData } = data;
       void _omit;
       await prisma.post.update({ where: { id: postId }, data: updateData });
-    } else {
-      const created = await prisma.post.create({
-        // 新規 QA は未回答("open")で作成。それ以外は qaStatus を持たない。
-        data: { ...data, qaStatus: data.postType === "qa" ? "open" : null },
-        select: { id: true, title: true, published: true, publishAt: true },
-      });
-      // 新規作成かつ公開中（予約でない）なら、フォロワーへ新着通知。
-      const live =
-        created.published &&
-        (!created.publishAt || created.publishAt.getTime() <= Date.now());
-      if (live) {
-        const author = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { displayName: true },
-        });
-        await notifyFollowersNewPost({
-          authorId: userId,
-          authorName: author?.displayName ?? "",
-          postId: created.id,
-          postTitle: created.title,
-        });
-      }
+      return { id: postId };
     }
-    return null;
+    const created = await prisma.post.create({
+      // 新規 QA は未回答("open")で作成。それ以外は qaStatus を持たない。
+      data: { ...data, qaStatus: data.postType === "qa" ? "open" : null },
+      select: { id: true, title: true, published: true, publishAt: true },
+    });
+    // 新規作成かつ公開中（予約でない）なら、フォロワーへ新着通知。
+    const live =
+      created.published &&
+      (!created.publishAt || created.publishAt.getTime() <= Date.now());
+    if (live) {
+      const author = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true },
+      });
+      await notifyFollowersNewPost({
+        authorId: userId,
+        authorName: author?.displayName ?? "",
+        postId: created.id,
+        postTitle: created.title,
+      });
+    }
+    return { id: created.id };
   };
 
   // ===== 外部URL共有投稿 =====
@@ -113,7 +139,7 @@ export async function savePost(
     }
     const title = (ogpTitle || url).slice(0, 200);
 
-    const err = await persist({
+    const res = await persist({
       authorId: userId,
       postType: "external_url",
       title,
@@ -135,11 +161,13 @@ export async function savePost(
       published,
       tags,
       publishAt: publishAtDate,
+      pollClosesAt,
     }).catch((e) => {
       console.error("savePost(url) error", e);
-      return { error: "投稿の保存に失敗しました" } as PostFormState;
+      return { error: "投稿の保存に失敗しました" } as { id?: string; error?: string };
     });
-    if (err) return err;
+    if (res.error) return { error: res.error };
+    if (res.id) await applyPollOptions(res.id);
     revalidatePath("/dashboard");
     redirect("/dashboard");
   }
@@ -232,7 +260,7 @@ export async function savePost(
     (e) => console.error("link preview cache error", e)
   );
 
-  const err = await persist({
+  const res = await persist({
     authorId: userId,
     postType: articlePostType,
     title,
@@ -248,12 +276,14 @@ export async function savePost(
     published,
     tags,
     publishAt: publishAtDate,
+    pollClosesAt,
     ...saleData,
   }).catch((e) => {
     console.error("savePost error", e);
-    return { error: "記事の保存に失敗しました" } as PostFormState;
+    return { error: "記事の保存に失敗しました" } as { id?: string; error?: string };
   });
-  if (err) return err;
+  if (res.error) return { error: res.error };
+  if (res.id) await applyPollOptions(res.id);
 
   revalidatePath("/dashboard");
   redirect("/dashboard");

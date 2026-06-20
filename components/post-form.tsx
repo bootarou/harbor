@@ -60,7 +60,13 @@ type PostInitial = {
   comment: string;
   tipsEnabled: boolean;
   ogp: Ogp | null;
+  pollOptions: string[];
+  pollClosesAt: string;
+  // 既に投票があるアンケートは選択肢を変更できない（票の整合性保護）。
+  pollLocked: boolean;
 };
+
+const POLL_MAX_OPTIONS = 10;
 
 const initialState: PostFormState = {};
 
@@ -91,6 +97,28 @@ export function PostForm({ initial }: { initial: PostInitial }) {
 
   const [dirty, setDirty] = useState(false);
   const markDirty = () => setDirty(true);
+
+  // アンケート（任意・全投稿タイプ）。空の選択肢は送信時に除外される。
+  const [pollOptions, setPollOptions] = useState<string[]>(
+    initial.pollOptions.length > 0 ? initial.pollOptions : [""]
+  );
+  const [pollClosesAt, setPollClosesAt] = useState(initial.pollClosesAt);
+  const filledPollOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+
+  const setPollOption = (i: number, v: string) => {
+    setPollOptions((prev) => prev.map((o, idx) => (idx === i ? v : o)));
+    markDirty();
+  };
+  const addPollOption = () => {
+    setPollOptions((prev) =>
+      prev.length >= POLL_MAX_OPTIONS ? prev : [...prev, ""]
+    );
+    markDirty();
+  };
+  const removePollOption = (i: number) => {
+    setPollOptions((prev) => prev.filter((_, idx) => idx !== i));
+    markDirty();
+  };
   const guardActive = dirty && !pending;
 
   useEffect(() => {
@@ -288,7 +316,7 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           <input
             type="radio"
             name="postTypeRadio"
-            checked={!isUrl}
+            checked={isArticle}
             onChange={() => {
               setPostType("article");
               markDirty();
@@ -589,6 +617,95 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           )}
         </>
       )}
+
+      {/* アンケート（任意・全投稿タイプ共通） */}
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <legend className="mb-1 font-semibold">アンケート（任意）</legend>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          選択肢を2つ以上入力すると投票を受け付けます（1人1票・投票後の変更不可）。空欄は無視されます。
+        </p>
+
+        {/* 送信用: 空欄を除いた選択肢を JSON で渡す（サーバーで再検証・正規化）。 */}
+        <input
+          type="hidden"
+          name="pollOptions"
+          value={JSON.stringify(filledPollOptions)}
+        />
+
+        {initial.pollLocked ? (
+          <>
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              ※ すでに投票があるため、選択肢は変更できません（締め切りのみ変更可）。
+            </p>
+            <ul className="flex flex-col gap-1">
+              {pollOptions.map((o, i) => (
+                <li
+                  key={i}
+                  className="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                >
+                  {o}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2">
+              {pollOptions.map((o, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={o}
+                    maxLength={80}
+                    onChange={(e) => setPollOption(i, e.target.value)}
+                    placeholder={`選択肢 ${i + 1}`}
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                  />
+                  {pollOptions.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePollOption(i)}
+                      className="shrink-0 text-xs text-gray-500 underline dark:text-gray-400"
+                    >
+                      削除
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {pollOptions.length < POLL_MAX_OPTIONS && (
+              <button
+                type="button"
+                onClick={addPollOption}
+                className="self-start rounded-md border border-gray-300 px-3 py-1.5 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
+              >
+                選択肢を追加
+              </button>
+            )}
+            {filledPollOptions.length === 1 && (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                アンケートを使う場合は選択肢を2つ以上入力してください。
+              </p>
+            )}
+          </>
+        )}
+
+        {filledPollOptions.length >= 2 && (
+          <label className="mt-1 flex flex-col gap-1 text-sm">
+            投票の締め切り（任意・空欄なら無期限）
+            <input
+              type="datetime-local"
+              name="pollClosesAt"
+              value={pollClosesAt}
+              onChange={(e) => {
+                setPollClosesAt(e.target.value);
+                markDirty();
+              }}
+              className="w-64 rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            />
+          </label>
+        )}
+      </fieldset>
 
       {/* 公開日時（共通） */}
       <label className="flex flex-col gap-1 text-sm">

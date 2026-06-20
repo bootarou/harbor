@@ -52,6 +52,9 @@ export default async function EditPostPage({
         ogpDescription: true,
         ogpImageUrl: true,
         ogpSiteName: true,
+        pollClosesAt: true,
+        pollOptions: { orderBy: { order: "asc" }, select: { label: true } },
+        _count: { select: { pollVotes: true } },
       },
     }),
     prisma.user.findUnique({
@@ -109,6 +112,9 @@ export default async function EditPostPage({
                 url: post.url ?? "",
               }
             : null,
+          pollOptions: post.pollOptions.map((o) => o.label),
+          pollClosesAt: toDatetimeLocal(post.pollClosesAt),
+          pollLocked: post._count.pollVotes > 0,
         }}
       />
     </main>

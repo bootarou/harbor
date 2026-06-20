@@ -7,6 +7,7 @@ import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
 import { AnswerForm } from "@/components/qa/answer-form";
+import { PollBox } from "@/components/poll/poll-box";
 import { selectBestAnswer } from "@/app/answers/actions";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
@@ -119,6 +120,7 @@ export default async function PostDetailPage({
       publishAt: true,
       postType: true,
       qaStatus: true,
+      pollClosesAt: true,
       url: true,
       comment: true,
       ogpTitle: true,
@@ -239,6 +241,22 @@ export default async function PostDetailPage({
         select: { id: true },
       })) !== null
     : false;
+
+  // ===== アンケート（任意・全投稿タイプ） =====
+  const pollOptions = await prisma.pollOption.findMany({
+    where: { postId: post.id },
+    orderBy: { order: "asc" },
+    select: { id: true, label: true, _count: { select: { votes: true } } },
+  });
+  const hasPoll = pollOptions.length >= 2;
+  const pollTotalVotes = pollOptions.reduce((s, o) => s + o._count.votes, 0);
+  const myPollVote =
+    hasPoll && currentUserId
+      ? await prisma.pollVote.findUnique({
+          where: { postId_userId: { postId: post.id, userId: currentUserId } },
+          select: { optionId: true },
+        })
+      : null;
 
   // ===== QA（質問・回答） =====
   const isQa = post.postType === "qa";
@@ -472,6 +490,26 @@ export default async function PostDetailPage({
           </div>
         )}
       </article>
+
+      {hasPoll && (
+        <PollBox
+          postId={post.id}
+          options={pollOptions.map((o) => ({
+            id: o.id,
+            label: o.label,
+            count: o._count.votes,
+          }))}
+          totalVotes={pollTotalVotes}
+          myOptionId={myPollVote?.optionId ?? null}
+          closesAt={post.pollClosesAt}
+          closed={
+            post.pollClosesAt !== null &&
+            post.pollClosesAt.getTime() <= nowMs
+          }
+          isLoggedIn={currentUserId !== null}
+          isAuthor={isAuthor}
+        />
+      )}
 
       {isQa && (
         <section className="mt-12">

@@ -53,6 +53,7 @@ model User {
   bookmarks     Bookmark[]
   notifications Notification[]
   answers       Answer[]       @relation("Answers")
+  pollVotes     PollVote[]
 }
 
 // サイト内通知。表示用にアクター名・記事タイトル等をスナップショット保存（FKに依存しない）。
@@ -163,6 +164,9 @@ model Post {
   tipsEnabled    Boolean @default(true) // URL投稿の投げ銭ON/OFF（通常記事は常に可）
   viewCount      Int     @default(0) // 閲覧数（インプレッション）
 
+  // アンケート（任意・全投稿タイプ）: 選択肢が2件以上ある時のみ有効。
+  pollClosesAt   DateTime? // 投票締め切り（任意・未設定なら無期限）
+
   // 販売公開（有料記事）関連
   paid          Boolean  @default(false)
   paidHtml      String?  @db.Text // 購入者のみ閲覧できる有料部分
@@ -181,6 +185,8 @@ model Post {
   thanks    Thanks[]
   bookmarks Bookmark[]
   answers   Answer[]
+  pollOptions PollOption[]
+  pollVotes   PollVote[]
 
   @@index([authorId])
   @@index([published, createdAt])
@@ -316,4 +322,35 @@ model Answer {
 
   @@index([postId])
   @@index([postId, isBest])
+}
+
+// アンケートの選択肢（Twitter風投票）。任意機能で、postType を問わず付与できる。
+// label はプレーンテキスト（HTML不可・表示時に React がエスケープ）。
+model PollOption {
+  id        String     @id @default(cuid())
+  postId    String
+  post      Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  label     String // 選択肢ラベル（プレーンテキスト・最大80文字）
+  order     Int        @default(0) // 表示順
+  createdAt DateTime   @default(now())
+
+  votes PollVote[]
+
+  @@index([postId])
+}
+
+// アンケートへの投票。1ユーザーにつき各投稿で1票のみ（@@unique）。投票後の変更は不可。
+model PollVote {
+  id        String     @id @default(cuid())
+  postId    String
+  post      Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@unique([postId, userId])
+  @@index([optionId])
+  @@index([postId])
 }
