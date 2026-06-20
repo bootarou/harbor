@@ -42,7 +42,7 @@ export function PostCard({
     <li className="overflow-hidden border-b border-gray-200 transition hover:border-gray-300 max-sm:last:border-b-0 sm:rounded-lg sm:border dark:border-gray-800 dark:hover:border-gray-700">
       {/* スマホ: 横並び（左サムネ・右情報）/ sm以上: 縦カード */}
       <Link href={`/posts/${post.id}`} className="flex h-full flex-row sm:flex-col">
-        <div className="m-3 aspect-[4/3] w-20 shrink-0 self-start overflow-hidden rounded bg-gray-100 sm:m-0 sm:aspect-video sm:w-full sm:self-auto sm:rounded-none dark:bg-gray-800">
+        <div className="m-3 aspect-video w-28 shrink-0 self-start overflow-hidden rounded bg-gray-100 sm:m-0 sm:w-full sm:self-auto sm:rounded-none dark:bg-gray-800">
           {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb} alt="" className="h-full w-full object-cover" />
