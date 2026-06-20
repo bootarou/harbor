@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { savePost, type PostFormState } from "@/app/posts/actions";
+import { savePost, autosaveDraft, type PostFormState } from "@/app/posts/actions";
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { TagInput, type TagInputHandle } from "@/components/tag-input";
 
@@ -77,6 +77,9 @@ export function PostForm({ initial }: { initial: PostInitial }) {
   const isUrl = postType === "external_url";
   const isQa = postType === "qa";
   const isArticle = postType === "article";
+  // 自動保存は「新規・下書き」のみ。公開済み記事は書きかけが即公開されるのを防ぐため対象外
+  // （公開済みは手動「保存する」でのみ反映。未保存はブラウザバック警告で保護）。
+  const autosaveEnabled = !isUrl && !initial.published;
 
   const [title, setTitle] = useState(initial.title);
   const [contentHTML, setContentHTML] = useState(initial.contentHTML);
@@ -95,8 +98,78 @@ export function PostForm({ initial }: { initial: PostInitial }) {
   const [ogpLoading, setOgpLoading] = useState(false);
   const [ogpError, setOgpError] = useState<string | null>(null);
 
+  const formRef = useRef<HTMLFormElement>(null);
+  // 自動保存で作成された下書きの id を以後の保存に引き継ぐ（新規→更新へ切替）。
+  const [postId, setPostId] = useState(initial.id);
+
   const [dirty, setDirty] = useState(false);
-  const markDirty = () => setDirty(true);
+  const dirtyRef = useRef(false);
+  const markDirty = () => {
+    setDirty(true);
+    dirtyRef.current = true;
+  };
+
+  // ===== 下書きの自動保存 =====
+  const [autosaving, setAutosaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(
+    null
+  );
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const editSeqRef = useRef(0);
+  const firstRunRef = useRef(true);
+
+  function showToast(msg: string, err = false) {
+    setToast({ msg, err });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }
+
+  async function runAutosave() {
+    // 自動保存対象外（外部URL/公開済み）か、手動保存中はスキップ。
+    if (!autosaveEnabled || pending) return;
+    const formEl = formRef.current;
+    if (!formEl) return;
+    // 実行中なら、進行中の保存が終わったあとに再試行する（末尾の編集を取りこぼさない）。
+    if (savingRef.current) {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = setTimeout(() => {
+        void runAutosave();
+      }, 1500);
+      return;
+    }
+    const fd = new FormData(formEl);
+    const t = String(fd.get("title") ?? "").trim();
+    const body = String(fd.get("contentHTML") ?? "");
+    // 中身が空（タイトルも本文も無し）のうちは作成しない。
+    const hasContent =
+      t.length > 0 || body.replace(/<[^>]*>/g, "").trim().length > 0;
+    if (!hasContent) return;
+
+    const seq = editSeqRef.current;
+    savingRef.current = true;
+    setAutosaving(true);
+    try {
+      const res = await autosaveDraft(fd);
+      if (res.ok) {
+        if (res.postId) setPostId((prev) => prev ?? res.postId);
+        // 保存後にさらに編集が無ければ「未保存」を解除する（編集が入っていれば維持）。
+        if (editSeqRef.current === seq) {
+          setDirty(false);
+          dirtyRef.current = false;
+        }
+        showToast("下書きを保存しました");
+      } else if (res.error) {
+        showToast(res.error, true);
+      }
+    } catch {
+      showToast("自動保存に失敗しました", true);
+    } finally {
+      savingRef.current = false;
+      setAutosaving(false);
+    }
+  }
 
   // アンケート（任意・全投稿タイプ）。空の選択肢は送信時に除外される。
   const [pollOptions, setPollOptions] = useState<string[]>(
@@ -130,6 +203,63 @@ export function PostForm({ initial }: { initial: PostInitial }) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [guardActive]);
+
+  // dirtyRef を dirty に追従させる（popstate ガードは ref を参照するため、
+  // setDirty(true) 経由の変更も確実に反映する）。
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  // 内容（タイトル/本文/有料部分/カバー/販売ON）が変わるたびに自動保存をデバウンス起動。
+  // マウント直後（初期表示）は実行しない。タグのみの変更はここでは拾わないが、保存時は反映される。
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+    if (firstRunRef.current) {
+      firstRunRef.current = false;
+      return;
+    }
+    editSeqRef.current += 1;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void runAutosave();
+    }, 1500);
+    // runAutosave は最新の DOM(FormData) を読むため依存に含めない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, contentHTML, paidHtml, coverImage, paid, autosaveEnabled]);
+
+  // モバイル含むブラウザバック対策。ダミー履歴を1つ積み、戻る操作を popstate で捕捉する。
+  // 未保存（dirty）のときだけ確認ダイアログを出す（自動保存済みならそのまま戻れる）。
+  useEffect(() => {
+    window.history.pushState(null, "", window.location.href);
+    const onPopState = () => {
+      if (!dirtyRef.current) {
+        window.removeEventListener("popstate", onPopState);
+        window.history.back();
+        return;
+      }
+      const ok = window.confirm(
+        "編集中の変更があります。保存せずにこのページを離れますか？"
+      );
+      if (ok) {
+        window.removeEventListener("popstate", onPopState);
+        window.history.back();
+      } else {
+        // 留まる: ダミー履歴を積み直して次の戻る操作も捕捉する。
+        window.history.pushState(null, "", window.location.href);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // アンマウント時にタイマーを片付ける。
+  useEffect(
+    () => () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    },
+    []
+  );
 
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -299,14 +429,14 @@ export function PostForm({ initial }: { initial: PostInitial }) {
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form ref={formRef} action={formAction} className="flex flex-col gap-6">
       {state.error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {state.error}
         </p>
       )}
 
-      {initial.id && <input type="hidden" name="postId" value={initial.id} />}
+      {postId && <input type="hidden" name="postId" value={postId} />}
       <input type="hidden" name="postType" value={postType} />
 
       {/* 投稿タイプ */}
@@ -742,7 +872,39 @@ export function PostForm({ initial }: { initial: PostInitial }) {
         <Link href="/dashboard" className="text-sm underline">
           キャンセル
         </Link>
+        {autosaveEnabled && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {autosaving
+              ? "自動保存中…"
+              : dirty
+                ? "未保存の変更があります"
+                : postId
+                  ? "下書き保存済み"
+                  : ""}
+          </span>
+        )}
+        {!isUrl && initial.published && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            公開中の記事は自動保存されません（「保存する」で反映）
+          </span>
+        )}
       </div>
+
+      {/* 自動保存トースト */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md px-4 py-2 text-sm shadow-lg ${
+            toast.err
+              ? "bg-red-600 text-white"
+              : "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+          }`}
+        >
+          {toast.err ? "⚠ " : "✓ "}
+          {toast.msg}
+        </div>
+      )}
     </form>
   );
 }

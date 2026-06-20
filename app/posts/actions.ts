@@ -289,6 +289,111 @@ export async function savePost(
   redirect("/dashboard");
 }
 
+export type AutosaveResult = { ok: boolean; postId?: string; error?: string };
+
+// 下書きの自動保存（要ログイン・記事/QAのみ）。
+// 既存の savePost とは別に、リダイレクト・通知・リンクプレビュー等を行わない軽量版。
+// 公開状態・予約・qaStatus は変更せず（常に下書き寄り）、本文などの内容のみ保存する。
+export async function autosaveDraft(
+  formData: FormData
+): Promise<AutosaveResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "認証が必要です" };
+  const userId = session.user.id;
+
+  const str = (key: string): string => {
+    const v = formData.get(key);
+    return typeof v === "string" ? v : "";
+  };
+
+  const postType = str("postType");
+  // 外部URL投稿は自動保存の対象外（必須項目・著作権確認があるため）。
+  if (postType === "external_url") {
+    return { ok: false, error: "対象外の投稿タイプです" };
+  }
+  const isQa = postType === "qa";
+
+  const postId = str("postId");
+  const title = str("title").slice(0, 200);
+  const safeHtml = sanitizePostHtml(str("contentHTML"));
+  const coverImage = str("coverImage").trim() || null;
+  const tags = parseTags(formData.get("tags"));
+
+  // 販売設定は下書き段階では厳密検証せず、入力値だけ保持する（QAは常に無料）。
+  const paid = !isQa && formData.get("paid") === "true";
+  const paidHtml = paid ? sanitizePostHtml(str("paidHtml")) : null;
+  const priceRaw = formData.get("priceAmount");
+  const priceAmount =
+    paid &&
+    typeof priceRaw === "string" &&
+    priceRaw.trim() !== "" &&
+    !Number.isNaN(Number(priceRaw))
+      ? Number(priceRaw)
+      : null;
+  const priceCurrency = paid ? str("priceCurrency") || "XYM" : null;
+  const sellerRaw = str("sellerAddress").trim();
+  const sellerAddress =
+    paid && /^[A-Z2-7]{39}$/.test(sellerRaw) ? sellerRaw : null;
+
+  try {
+    if (postId.length > 0) {
+      const existing = await prisma.post.findUnique({
+        where: { id: postId },
+        select: { authorId: true, published: true },
+      });
+      if (!existing) return { ok: false, error: "記事が見つかりません" };
+      if (existing.authorId !== userId) {
+        return { ok: false, error: "編集権限がありません" };
+      }
+      // 公開済み記事は自動保存しない（書きかけが本番へ即反映されるのを防ぐ・防御）。
+      if (existing.published) {
+        return { ok: false, error: "公開中の記事は自動保存されません" };
+      }
+      // 予約・qaStatus は自動保存では変更しない（内容のみ更新）。
+      await prisma.post.update({
+        where: { id: postId },
+        data: {
+          title,
+          contentHTML: safeHtml,
+          coverImage,
+          tags,
+          paid,
+          paidHtml,
+          priceAmount,
+          priceCurrency,
+          sellerAddress,
+        },
+      });
+      return { ok: true, postId };
+    }
+
+    const created = await prisma.post.create({
+      data: {
+        authorId: userId,
+        postType: isQa ? "qa" : "article",
+        title,
+        contentHTML: safeHtml,
+        coverImage,
+        tags,
+        published: false, // 自動保存は常に下書き
+        publishAt: null,
+        qaStatus: isQa ? "open" : null,
+        tipsEnabled: true,
+        paid,
+        paidHtml,
+        priceAmount,
+        priceCurrency,
+        sellerAddress,
+      },
+      select: { id: true },
+    });
+    return { ok: true, postId: created.id };
+  } catch (e) {
+    console.error("autosaveDraft error", e);
+    return { ok: false, error: "自動保存に失敗しました" };
+  }
+}
+
 // 記事削除（本人のみ）。
 export async function deletePost(formData: FormData): Promise<void> {
   const session = await auth();
