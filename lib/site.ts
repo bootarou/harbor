@@ -11,10 +11,17 @@ function isPublic(u: string | undefined): u is string {
   );
 }
 
+// 公開ドメインは外部クローラー向けに常に https へ正規化する。
+// http の og:image / twitter:image は X(Twitter) 等のカードで無視され画像が出ないため。
+// （本番は Cloudflare 等で TLS 終端され https 配信の前提。localhost は対象外。）
+function toHttpsIfPublic(u: string): string {
+  return u.replace(/^http:\/\//i, "https://");
+}
+
 export function siteBaseUrl(): string {
   const candidates = [process.env.NEXT_PUBLIC_SITE_URL, process.env.AUTH_URL];
   for (const c of candidates) {
-    if (isPublic(c)) return c.replace(/\/$/, "");
+    if (isPublic(c)) return toHttpsIfPublic(c).replace(/\/$/, "");
   }
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -24,8 +31,11 @@ export function siteBaseUrl(): string {
 }
 
 // 相対パス/絶対URL を絶対URLへ正規化する。
+// 既に絶対URLでも、公開ドメインの http は https へ正規化する（OGカード画像対策）。
 export function absoluteUrl(pathOrUrl: string): string {
-  if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl;
+  if (/^https?:\/\//.test(pathOrUrl)) {
+    return isPublic(pathOrUrl) ? toHttpsIfPublic(pathOrUrl) : pathOrUrl;
+  }
   const base = siteBaseUrl();
   return `${base}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
 }
