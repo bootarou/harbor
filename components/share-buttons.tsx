@@ -1,13 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 
-// 記事のSNS共有リンク＋URLコピー。
+// 記事・プロフィールのSNS共有リンク＋URLコピー（＋任意でQRコード表示）。
 // 共有/コピーするURLはクリック時に window.location.href を使うため、
 // NEXT_PUBLIC_SITE_URL の設定に依存せず正確になる（fallback として渡された url を使用）。
-export function ShareButtons({ url, title }: { url: string; title: string }) {
+// showQr=true で「QRコード」ボタンを追加（スマホでのプロフィール交換用）。
+export function ShareButtons({
+  url,
+  title,
+  showQr = false,
+}: {
+  url: string;
+  title: string;
+  showQr?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrError, setQrError] = useState(false);
 
   useEffect(() => {
     // Web Share API はクライアントのみ。SSRと差が出ないようマウント後に判定する。
@@ -61,6 +73,25 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
     }
   }
 
+  async function openQr() {
+    setQrError(false);
+    try {
+      const dataUrl = await QRCode.toDataURL(currentUrl(), {
+        margin: 1,
+        width: 240,
+      });
+      setQrDataUrl(dataUrl);
+    } catch {
+      setQrError(true);
+      setQrDataUrl(null);
+    }
+  }
+
+  function closeQr() {
+    setQrDataUrl(null);
+    setQrError(false);
+  }
+
   const btn =
     "inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900";
 
@@ -99,6 +130,68 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
         </svg>
         {copied ? "コピーしました" : "URLをコピー"}
       </button>
+
+      {showQr && (
+        <button
+          type="button"
+          onClick={openQr}
+          className={btn}
+          aria-label="QRコードを表示"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2" />
+            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2" />
+            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="2" />
+            <path d="M14 14h3v3M21 14v7h-7" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          QRコード
+        </button>
+      )}
+
+      {qrError && (
+        <span className="text-xs text-red-600 dark:text-red-400">
+          QRコードの生成に失敗しました
+        </span>
+      )}
+
+      {/* QRコード表示モーダル（プロフィール交換用） */}
+      {qrDataUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="共有用QRコード"
+          onClick={closeQr}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex flex-col items-center gap-3 rounded-lg bg-white p-5 shadow-xl dark:bg-gray-900"
+          >
+            <p className="text-sm font-semibold">{title}</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrDataUrl}
+              alt="共有用QRコード"
+              width={240}
+              height={240}
+              className="rounded-md border border-gray-200 bg-white p-2 dark:border-gray-700"
+            />
+            <p className="max-w-[240px] break-all text-center text-xs text-gray-500 dark:text-gray-400">
+              {currentUrl()}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              スマホのカメラで読み取って共有できます
+            </p>
+            <button
+              type="button"
+              onClick={closeQr}
+              className="rounded-md border border-gray-300 px-4 py-1.5 text-sm dark:border-gray-700"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

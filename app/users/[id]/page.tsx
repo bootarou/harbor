@@ -345,6 +345,7 @@ export default async function UserProfilePage({
           <ShareButtons
             url={absoluteUrl(`/users/${user.id}`)}
             title={`${user.displayName} のプロフィール | Harbor`}
+            showQr
           />
         </div>
       </section>
