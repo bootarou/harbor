@@ -31,6 +31,7 @@ services:
         NEXT_PUBLIC_SYMBOL_NETWORK: ${NEXT_PUBLIC_SYMBOL_NETWORK:-testnet}
         NEXT_PUBLIC_SYMBOL_NODE_URL: ${NEXT_PUBLIC_SYMBOL_NODE_URL:-https://sym-test-01.opening-line.jp:3001}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-⚓Harbor}
         NEXT_PUBLIC_S3_PUBLIC_URL: ${NEXT_PUBLIC_S3_PUBLIC_URL:-}
     restart: unless-stopped
     depends_on:
@@ -50,6 +51,7 @@ services:
       NEXT_PUBLIC_SYMBOL_NETWORK: ${NEXT_PUBLIC_SYMBOL_NETWORK:-testnet}
       NEXT_PUBLIC_SYMBOL_NODE_URL: ${NEXT_PUBLIC_SYMBOL_NODE_URL:-https://sym-test-01.opening-line.jp:3001}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-⚓Harbor}
       # cron / 通報メール（任意）
       CRON_SECRET: ${CRON_SECRET:-}
       REPORT_NOTIFY_EMAIL: ${REPORT_NOTIFY_EMAIL:-}

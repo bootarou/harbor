@@ -6,6 +6,10 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { purgeAwareSignOut } from "@/lib/wallet/purge-session";
 
+// ヘッダーのサイト名。NEXT_PUBLIC_SITE_NAME で差し替え可能（未設定時は既定の "⚓Harbor"）。
+// NEXT_PUBLIC_* はビルド時に焼き込まれるため、変更後は再ビルドが必要。
+const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || "⚓Harbor";
+
 function NotificationBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
@@ -72,7 +76,7 @@ export function SiteHeader() {
             window.location.assign("/");
           }}
         >
-          ⚓Harbor
+          {SITE_NAME}
         </Link>
 
         {/* デスクトップ: 横並びナビ */}
