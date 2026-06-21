@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { DidLogin } from "@/components/auth/did-login";
 import { NfcLogin } from "@/components/auth/nfc-login";
+import { QrLogin } from "@/components/auth/qr-login";
 
 export const metadata = { title: "ログイン" };
 
@@ -13,6 +14,8 @@ export default function LoginPage() {
       </p>
       <Suspense fallback={<p className="text-sm">読み込み中...</p>}>
         <DidLogin />
+        {/* QRコードから取り込んで直接ログイン（カメラ非対応端末は手入力フォールバック）。 */}
+        <QrLogin />
         {/* 対応端末でのみ表示される（非対応端末では NfcLogin が null を返す）。 */}
         <NfcLogin />
       </Suspense>

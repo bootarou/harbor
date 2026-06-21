@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   decryptPrivateKey,
   WebCryptoUnavailableError,
@@ -14,40 +15,39 @@ import { isCameraScanSupported } from "@/lib/wallet/capabilities";
 import { useQrScanner } from "@/components/wallet/use-qr-scanner";
 import { shortAddress } from "@/lib/did";
 
-type Step = "idle" | "scanning" | "paste" | "verify" | "done";
+type Step = "idle" | "scanning" | "paste" | "passphrase";
 
-// 機能A（スマホ側）: PCに表示したQRコードをカメラで読み取り（対応端末）、
-// または手入力で貼り付けて、暗号化済みウォレットをこの端末に取り込む。
-// 取り込みは「パスフレーズで正しく復号できることを確認してから」確定する。
-export function WalletQrImport({
-  onImported,
-}: {
-  onImported: (address: string) => void;
-}) {
+// QRコードでログイン（ログインページ用）。
+// 別端末で表示した暗号化ウォレットのQRをカメラ（jsqr）または手入力で読み取り、
+// パスフレーズで復号 → この端末に取り込み（localStorage 保存）→ 既存の DID 署名ログインに合流。
+// 「新規作成→ログイン→ウォレット移行」の遠回りを避け、QRから直接ログインできる。
+export function QrLogin() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+
   const [supported, setSupported] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
 
-  // 読み取り済み（未確定）の暗号化ウォレットと、確認用パスフレーズ。
   const [pending, setPending] = useState<EncryptedWallet | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    // 機能検出はマウント後に行い、SSR とのハイドレーション不一致を避ける。
     /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setSupported(isCameraScanSupported());
   }, []);
 
-  // 読み取った文字列を検証 →「確認（パスフレーズ）」へ。
+  // 読み取った文字列を検証 →「パスフレーズ」へ。
   const handleScannedText = useCallback((text: string) => {
     try {
       const wallet = parseTransferredWallet(text);
       setPending(wallet);
       setError(null);
       setPassphrase("");
-      setStep("verify");
+      setStep("passphrase");
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み取りに失敗しました。");
     }
@@ -76,47 +76,40 @@ export function WalletQrImport({
     handleScannedText(pasteText.trim());
   }
 
-  // パスフレーズで復号できることを確認してから localStorage に保存・確定する。
-  // さらに、その鍵で DID ログインしてセッションを取り込んだアカウントに合わせる
-  // （これをしないとプロフィール等が反映されず、再ログインが必要になる）。
-  async function confirmImport() {
+  // パスフレーズで復号 → 取り込み（保存）→ DID ログイン。
+  async function loginWithPending(e: React.FormEvent) {
+    e.preventDefault();
     if (!pending) return;
     setError(null);
     setBusy(true);
     try {
-      // 復号できれば正しいデータ＋正しいパスフレーズ。
       const privateKey = await decryptPrivateKey(pending, passphrase);
+      // この端末に取り込む（以後はパスワードでログインできる）。
       addWallet(pending);
       setActiveAddress(pending.address);
-      // 公開アドレスのみサーバーへ登録（任意・失敗しても取り込みは成功）。
-      try {
-        await fetch("/api/wallet/address", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: pending.address }),
-        });
-      } catch {
-        /* 公開アドレス登録失敗は致命的でない */
-      }
       // 取り込んだウォレットで DID ログイン（署名のみ送信・秘密鍵は送らない）。
-      const login = await didLoginWithPrivateKey(privateKey);
-      const addr = pending.address;
+      const res = await didLoginWithPrivateKey(privateKey);
+      if (!res.ok) {
+        setError(res.error ?? "ログインに失敗しました");
+        return;
+      }
+      // 公開アドレスをサーバーへ登録（ログイン後なので認証済み）。失敗しても続行。
+      fetch("/api/wallet/address", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: pending.address }),
+      }).catch(() => {});
       setPassphrase("");
       setPending(null);
-      setStep("done");
-      if (!login.ok) {
-        // 取り込み・保存は完了済み。セッション切替だけ失敗した場合は再ログインを案内。
-        setError(
-          "取り込みは完了しましたが、自動サインインに失敗しました。ログイン画面からこのアカウントでログインしてください。"
-        );
-      }
-      // セッション・一覧を反映（成功時はプロフィール等が即反映される）。
-      onImported(addr);
-    } catch (e) {
+      setStep("idle");
+      router.push(callbackUrl);
+      router.refresh();
+    } catch (err) {
       setError(
-        e instanceof WrongPassphraseError || e instanceof WebCryptoUnavailableError
-          ? e.message
-          : "復号の確認に失敗しました。"
+        err instanceof WrongPassphraseError ||
+          err instanceof WebCryptoUnavailableError
+          ? err.message
+          : "ログインに失敗しました"
       );
     } finally {
       setBusy(false);
@@ -124,26 +117,27 @@ export function WalletQrImport({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-      <p className="text-sm font-semibold">QRコードから読み込む</p>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        別端末（PC等）に表示した暗号化ウォレットのQRコードを取り込みます。取り込み後、開くにはパスフレーズが必要です。
+    <div className="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-6 dark:border-gray-800">
+      <p className="text-sm font-semibold">QRコードでログイン</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        別端末（PC等）の「QRコードで別端末へ転送」で表示したQRを読み取り、この端末に取り込んでログインします。
+        開くにはパスフレーズが必要です。
       </p>
 
       {error && (
-        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
+        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
           {error}
         </p>
       )}
 
       {step === "idle" && (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             {supported && (
               <button
                 type="button"
                 onClick={startScan}
-                className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-700"
               >
                 カメラで読み取る
               </button>
@@ -154,22 +148,21 @@ export function WalletQrImport({
                 setError(null);
                 setStep("paste");
               }}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700"
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium dark:border-gray-700"
             >
               手入力で貼り付け
             </button>
           </div>
           {!supported && (
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              ※ カメラ読み取りはHTTPS接続の対応端末（Android Chrome等）でのみ使えます。
-              http://192.168.x.x のようなLAN接続では使えないため、手入力で貼り付けてください。
+              ※ カメラ読み取りはHTTPS接続の対応端末でのみ使えます。それ以外は手入力で貼り付けてください。
             </p>
           )}
         </div>
       )}
 
       {step === "scanning" && (
-        <div className="mt-3 flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-2">
           <video
             ref={videoRef}
             playsInline
@@ -179,18 +172,14 @@ export function WalletQrImport({
           <p className="text-xs text-gray-500 dark:text-gray-400">
             QRコードを枠内に映してください…
           </p>
-          <button
-            type="button"
-            onClick={cancelScan}
-            className="text-xs underline"
-          >
+          <button type="button" onClick={cancelScan} className="text-xs underline">
             キャンセル
           </button>
         </div>
       )}
 
       {step === "paste" && (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
@@ -218,30 +207,27 @@ export function WalletQrImport({
         </div>
       )}
 
-      {step === "verify" && pending && (
-        <div className="mt-3 flex flex-col gap-2 rounded-md bg-gray-50 p-3 dark:bg-gray-900">
+      {step === "passphrase" && pending && (
+        <form onSubmit={loginWithPending} className="flex flex-col gap-2">
           <p className="text-xs text-gray-600 dark:text-gray-300">
             読み取ったアカウント:{" "}
             <span className="font-mono">{shortAddress(pending.address)}</span>
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            このウォレットのパスフレーズを入力してください。正しく復号できることを確認してから保存します。
-          </p>
           <div className="flex gap-2">
             <input
               type="password"
+              required
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
               placeholder="ウォレットパスフレーズ"
-              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
             />
             <button
-              type="button"
-              onClick={confirmImport}
+              type="submit"
               disabled={busy || passphrase.length === 0}
-              className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
             >
-              {busy ? "確認中..." : "保存"}
+              {busy ? "ログイン中..." : "ログイン"}
             </button>
           </div>
           <button
@@ -254,25 +240,7 @@ export function WalletQrImport({
           >
             取消
           </button>
-        </div>
-      )}
-
-      {step === "done" && (
-        <div className="mt-3 flex flex-col gap-2">
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
-            ✓ ウォレットをこの端末に取り込みました。
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setStep("idle");
-            }}
-            className="self-start text-xs underline"
-          >
-            続けて別のウォレットを読み込む
-          </button>
-        </div>
+        </form>
       )}
     </div>
   );
