@@ -234,7 +234,9 @@ export default async function UserProfilePage({
               {user.symbolNamespace && (
                 <span
                   title={
-                    user.smdSyncedAt ? "Symbol Metadata認証済み" : undefined
+                    user.smdSyncedAt
+                      ? "Symbol Metadata (SMD) 認証済み"
+                      : undefined
                   }
                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                     user.smdSyncedAt
@@ -247,6 +249,11 @@ export default async function UserProfilePage({
                       : undefined
                   }
                 >
+                  {user.smdSyncedAt && (
+                    <span className="rounded-sm bg-white/25 px-1 text-[9px] font-bold leading-none tracking-wider">
+                      SMD
+                    </span>
+                  )}
                   ✓ {user.symbolNamespace}
                 </span>
               )}
