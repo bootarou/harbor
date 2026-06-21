@@ -35,8 +35,10 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
+    // camera は同一オリジンのみ許可（ウォレットのQRコード読み取りで使用）。
+    // microphone / geolocation は未使用のため全面禁止のまま。
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=()",
+    value: "camera=(self), microphone=(), geolocation=()",
   },
 ];
 
