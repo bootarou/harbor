@@ -3,7 +3,12 @@
 
 /** Web NFC（NDEFReader）に対応しているか。主に Android Chrome（HTTPS）で true。 */
 export function isNfcSupported(): boolean {
-  return typeof window !== "undefined" && "NDEFReader" in window;
+  // 非HTTPSでは NDEFReader 自体が存在しないが、念のため secure context も明示確認する。
+  return (
+    typeof window !== "undefined" &&
+    window.isSecureContext === true &&
+    "NDEFReader" in window
+  );
 }
 
 /**
