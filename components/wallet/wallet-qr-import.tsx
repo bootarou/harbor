@@ -8,7 +8,8 @@ import {
   WrongPassphraseError,
   type EncryptedWallet,
 } from "@/lib/wallet/crypto";
-import { addWallet } from "@/lib/wallet/storage";
+import { addWallet, setActiveAddress } from "@/lib/wallet/storage";
+import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import { parseTransferredWallet } from "@/lib/wallet/portable";
 import { isCameraScanSupported } from "@/lib/wallet/capabilities";
 import { shortAddress } from "@/lib/did";
@@ -150,14 +151,17 @@ export function WalletQrImport({
   }
 
   // パスフレーズで復号できることを確認してから localStorage に保存・確定する。
+  // さらに、その鍵で DID ログインしてセッションを取り込んだアカウントに合わせる
+  // （これをしないとプロフィール等が反映されず、再ログインが必要になる）。
   async function confirmImport() {
     if (!pending) return;
     setError(null);
     setBusy(true);
     try {
-      // 復号できれば正しいデータ＋正しいパスフレーズ。復号結果（秘密鍵）はここで破棄する。
-      await decryptPrivateKey(pending, passphrase);
+      // 復号できれば正しいデータ＋正しいパスフレーズ。
+      const privateKey = await decryptPrivateKey(pending, passphrase);
       addWallet(pending);
+      setActiveAddress(pending.address);
       // 公開アドレスのみサーバーへ登録（任意・失敗しても取り込みは成功）。
       try {
         await fetch("/api/wallet/address", {
@@ -168,10 +172,19 @@ export function WalletQrImport({
       } catch {
         /* 公開アドレス登録失敗は致命的でない */
       }
+      // 取り込んだウォレットで DID ログイン（署名のみ送信・秘密鍵は送らない）。
+      const login = await didLoginWithPrivateKey(privateKey);
       const addr = pending.address;
       setPassphrase("");
       setPending(null);
       setStep("done");
+      if (!login.ok) {
+        // 取り込み・保存は完了済み。セッション切替だけ失敗した場合は再ログインを案内。
+        setError(
+          "取り込みは完了しましたが、自動サインインに失敗しました。ログイン画面からこのアカウントでログインしてください。"
+        );
+      }
+      // セッション・一覧を反映（成功時はプロフィール等が即反映される）。
       onImported(addr);
     } catch (e) {
       setError(
