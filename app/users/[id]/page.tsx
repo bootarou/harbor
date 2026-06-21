@@ -226,7 +226,7 @@ export default async function UserProfilePage({
           <img
             src={user.avatarUrl || "/avatar-placeholder.svg"}
             alt=""
-            className="h-16 w-16 rounded-full object-cover"
+            className="h-16 w-16 shrink-0 rounded-full object-cover"
           />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -303,11 +303,11 @@ export default async function UserProfilePage({
               </Link>
             </p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto shrink-0">
             {isMe ? (
               <Link
                 href="/profile"
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700"
+                className="whitespace-nowrap rounded-md border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-700"
               >
                 編集
               </Link>
