@@ -13,6 +13,8 @@ import { upsertLinkPreviewsFromHtml } from "@/lib/link-preview";
 
 export type PostFormState = {
   error?: string;
+  // 保存成功時。live=公開かつ予約でない（＝今すぐ公開された）場合に共有モーダルを出す。
+  success?: { postId: string; title: string; live: boolean };
 };
 
 // 記事の作成・更新（要ログイン、更新は本人のみ）。
@@ -167,9 +169,12 @@ export async function savePost(
       return { error: "投稿の保存に失敗しました" } as { id?: string; error?: string };
     });
     if (res.error) return { error: res.error };
-    if (res.id) await applyPollOptions(res.id);
+    if (!res.id) return { error: "投稿の保存に失敗しました" };
+    await applyPollOptions(res.id);
     revalidatePath("/dashboard");
-    redirect("/dashboard");
+    const live =
+      published && (!publishAtDate || publishAtDate.getTime() <= Date.now());
+    return { success: { postId: res.id, title, live } };
   }
 
   // ===== 通常記事 =====
@@ -283,10 +288,13 @@ export async function savePost(
     return { error: "記事の保存に失敗しました" } as { id?: string; error?: string };
   });
   if (res.error) return { error: res.error };
-  if (res.id) await applyPollOptions(res.id);
+  if (!res.id) return { error: "記事の保存に失敗しました" };
+  await applyPollOptions(res.id);
 
   revalidatePath("/dashboard");
-  redirect("/dashboard");
+  const live =
+    published && (!publishAtDate || publishAtDate.getTime() <= Date.now());
+  return { success: { postId: res.id, title, live } };
 }
 
 export type AutosaveResult = { ok: boolean; postId?: string; error?: string };

@@ -2,9 +2,11 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { savePost, autosaveDraft, type PostFormState } from "@/app/posts/actions";
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { TagInput, type TagInputHandle } from "@/components/tag-input";
+import { PostShareModal } from "@/components/post-share-modal";
 
 type Ogp = {
   title: string;
@@ -71,7 +73,12 @@ const POLL_MAX_OPTIONS = 10;
 const initialState: PostFormState = {};
 
 export function PostForm({ initial }: { initial: PostInitial }) {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(savePost, initialState);
+  // 公開完了後のSNS共有モーダル（url/title を保持）。
+  const [shareInfo, setShareInfo] = useState<{ url: string; title: string } | null>(
+    null
+  );
 
   const [postType, setPostType] = useState(initial.postType);
   const isUrl = postType === "external_url";
@@ -260,6 +267,27 @@ export function PostForm({ initial }: { initial: PostInitial }) {
     },
     []
   );
+
+  // 保存成功時: 変更フラグを解除（離脱ガード抑止）。公開（live）なら共有モーダルを表示し、
+  // それ以外（下書き・予約）はダッシュボードへ遷移する。
+  useEffect(() => {
+    if (!state.success) return;
+    // 保存成功後は保留中の自動保存をキャンセル（公開直後の不要な再保存を防ぐ）。
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    // サーバーアクションの結果（保存成功）に応じてUI状態を更新する正当なケース。
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setDirty(false);
+    dirtyRef.current = false;
+    const { postId, title: postTitle, live } = state.success;
+    if (live) {
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      setShareInfo({ url: `${origin}/posts/${postId}`, title: postTitle });
+    } else {
+      router.push("/dashboard");
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [state.success, router]);
 
   async function handleCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -904,6 +932,18 @@ export function PostForm({ initial }: { initial: PostInitial }) {
           {toast.err ? "⚠ " : "✓ "}
           {toast.msg}
         </div>
+      )}
+
+      {/* 公開完了後のSNS共有モーダル。閉じるとダッシュボードへ。 */}
+      {shareInfo && (
+        <PostShareModal
+          url={shareInfo.url}
+          title={shareInfo.title}
+          onClose={() => {
+            setShareInfo(null);
+            router.push("/dashboard");
+          }}
+        />
       )}
     </form>
   );
