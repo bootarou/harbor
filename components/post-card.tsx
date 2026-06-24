@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatXym } from "@/lib/format";
+import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
 
 export type PostCardData = {
   id: string;
@@ -19,6 +20,8 @@ export type PostCardData = {
   ogpImageUrl?: string | null;
   ogpSiteName?: string | null;
   author: { displayName: string; avatarUrl: string | null };
+  tippers?: TipperInfo[];
+  tipperMoreCount?: number;
 };
 
 function formatDate(d: Date | string): string {
@@ -91,8 +94,25 @@ export function PostCard({
             {excerpt}
           </p>
           {tip && tip.count > 0 && (
-            <span className="mt-2 self-start rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              💴 {formatXym(tip.total)} XYM・{tip.count}件
+            <span className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <span>
+                {formatXym(tip.total)} XYM・{tip.count}件
+              </span>
+              {(post.tippers?.length ?? 0) > 0 && (
+                <>
+                  {/* 金額テキストとアイコンスタックの区切り */}
+                  <span
+                    className="h-3 w-px shrink-0 bg-amber-300 dark:bg-amber-700"
+                    aria-hidden="true"
+                  />
+                  <TipperAvatars
+                    tippers={post.tippers ?? []}
+                    moreCount={post.tipperMoreCount ?? 0}
+                    variant="card"
+                    showCrown={false}
+                  />
+                </>
+              )}
             </span>
           )}
           <div className="mt-auto pt-2">

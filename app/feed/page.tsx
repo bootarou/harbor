@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostCard } from "@/components/post-card";
 import { FeedChips } from "@/components/feed-chips";
-import { livePostWhere } from "@/lib/posts";
+import { buildTippers, livePostWhere } from "@/lib/posts";
 import { htmlToText } from "@/lib/sanitize";
 
 export const metadata = { title: "フォロー中" };
@@ -52,7 +52,17 @@ export default async function FeedPage() {
           ogpImageUrl: true,
           ogpSiteName: true,
           author: { select: { displayName: true, avatarUrl: true } },
-          tips: { where: { answerId: null }, select: { amount: true } },
+          tips: {
+            where: { answerId: null },
+            orderBy: { confirmedAt: "asc" },
+            select: {
+              amount: true,
+              confirmed: true,
+              anonymous: true,
+              fromUserId: true,
+              fromUser: { select: { avatarUrl: true, displayName: true } },
+            },
+          },
         },
       })
     : [];
@@ -123,24 +133,29 @@ export default async function FeedPage() {
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={{
-                  ...post,
-                  priceAmount:
-                    post.priceAmount != null ? Number(post.priceAmount) : null,
-                  excerpt:
-                    post.postType === "external_url"
-                      ? post.comment ?? ""
-                      : htmlToText(post.contentHTML, 80),
-                }}
-                tip={{
-                  total: post.tips.reduce((s, t) => s + Number(t.amount), 0),
-                  count: post.tips.length,
-                }}
-              />
-            ))}
+            {posts.map((post) => {
+              const { tippers, moreCount } = buildTippers(post.tips);
+              return (
+                <PostCard
+                  key={post.id}
+                  post={{
+                    ...post,
+                    priceAmount:
+                      post.priceAmount != null ? Number(post.priceAmount) : null,
+                    excerpt:
+                      post.postType === "external_url"
+                        ? post.comment ?? ""
+                        : htmlToText(post.contentHTML, 80),
+                    tippers,
+                    tipperMoreCount: moreCount,
+                  }}
+                  tip={{
+                    total: post.tips.reduce((s, t) => s + Number(t.amount), 0),
+                    count: post.tips.length,
+                  }}
+                />
+              );
+            })}
           </ul>
         )}
       </section>

@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
+import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
 import { AnswerForm } from "@/components/qa/answer-form";
 import { PollBox } from "@/components/poll/poll-box";
 import { selectBestAnswer } from "@/app/answers/actions";
@@ -167,7 +168,7 @@ export default async function PostDetailPage({
           confirmedAt: true,
           createdAt: true,
           fromAddress: true,
-          fromUser: { select: { displayName: true } },
+          fromUser: { select: { displayName: true, avatarUrl: true } },
         },
       },
     },
@@ -177,13 +178,40 @@ export default async function PostDetailPage({
     notFound();
   }
 
-  const tipAgg = await prisma.tip.aggregate({
-    where: { postId: post.id, answerId: null },
-    _sum: { amount: true },
-    _count: true,
-  });
+  const [tipAgg, firstTipperRows, confirmedTipperCount] = await Promise.all([
+    prisma.tip.aggregate({
+      where: { postId: post.id, answerId: null },
+      _sum: { amount: true },
+      _count: true,
+    }),
+    // Tipper アイコン（先着順・確定済みのみ）。先頭7件。
+    prisma.tip.findMany({
+      where: { postId: post.id, answerId: null, confirmed: true },
+      orderBy: { confirmedAt: "asc" },
+      take: 7,
+      select: {
+        id: true,
+        fromUserId: true,
+        anonymous: true,
+        fromUser: { select: { avatarUrl: true, displayName: true } },
+      },
+    }),
+    prisma.tip.count({
+      where: { postId: post.id, answerId: null, confirmed: true },
+    }),
+  ]);
   const tipTotal = tipAgg._sum.amount ? Number(tipAgg._sum.amount) : 0;
   const tipCount = tipAgg._count;
+  const firstTippers: TipperInfo[] = firstTipperRows.map((t, i) => ({
+    userId: t.fromUserId,
+    avatarUrl: t.anonymous ? null : t.fromUser?.avatarUrl ?? null,
+    displayName: t.anonymous ? null : t.fromUser?.displayName ?? null,
+    anonymous: t.anonymous,
+    isFirst: i === 0,
+  }));
+  const tipperMoreCount = Math.max(0, confirmedTipperCount - 6);
+  // 先着1番目（最も早く確定した投げ銭）の Tip id。一覧で 👑 を付ける目印。
+  const firstTipId = firstTipperRows[0]?.id ?? null;
 
   const isAuthor = currentUserId === post.authorId;
   // 非公開記事は著者本人のみ閲覧可。
@@ -629,9 +657,16 @@ export default async function PostDetailPage({
           <h2 className="text-lg font-semibold">
             {isUrl ? "投げ銭（紹介・キュレーションへの価値送信）" : "投げ銭"}
           </h2>
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            💴 合計 {formatXym(tipTotal)} XYM・{tipCount} 件
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              合計 {formatXym(tipTotal)} XYM・{tipCount} 件
+            </span>
+            <TipperAvatars
+              tippers={firstTippers}
+              moreCount={tipperMoreCount}
+              variant="detail"
+            />
+          </div>
         </div>
 
         <TipBox
@@ -668,10 +703,31 @@ export default async function PostDetailPage({
                       </span>
                     );
                   })()}
-                  {tip.anonymous
-                    ? "匿名"
-                    : tip.fromUser?.displayName ??
-                      shortAddress(tip.fromAddress)}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={
+                      tip.anonymous
+                        ? "/avatar-placeholder.svg"
+                        : tip.fromUser?.avatarUrl || "/avatar-placeholder.svg"
+                    }
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded-full bg-gray-100 object-cover dark:bg-gray-800"
+                  />
+                  <span className="flex items-center gap-1">
+                    {tip.id === firstTipId && (
+                      <span
+                        className="text-base leading-none"
+                        title="First Tipper"
+                        aria-label="First Tipper"
+                      >
+                        👑
+                      </span>
+                    )}
+                    {tip.anonymous
+                      ? "匿名"
+                      : tip.fromUser?.displayName ??
+                        shortAddress(tip.fromAddress)}
+                  </span>
                 </span>
                 <span className="font-semibold">{formatXym(Number(tip.amount))} XYM</span>
               </li>
