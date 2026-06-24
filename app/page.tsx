@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostFeed } from "@/components/post-feed";
 import { HomeHighlights } from "@/components/home-highlights";
+import { FeedChips } from "@/components/feed-chips";
 import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
 import { getHomeHighlights } from "@/lib/home";
 
@@ -21,6 +23,37 @@ export default async function Home({
   const sp = await searchParams;
   const q = sp.q?.trim() ?? "";
   const tag = sp.tag?.trim() ?? "";
+
+  const session = await auth();
+  const me = session?.user?.id ?? null;
+
+  // ログイン時はフォロー中著者を取得（チップ表示＋新着バッジ判定に使う）。
+  // 「フォロー中」チップは既存の /feed ページへ遷移する。
+  let followingUsers: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  }[] = [];
+  let latestFollowingPostAt: string | null = null;
+  if (me) {
+    const follows = await prisma.follow.findMany({
+      where: { followerId: me },
+      orderBy: { createdAt: "desc" },
+      select: {
+        following: { select: { id: true, displayName: true, avatarUrl: true } },
+      },
+    });
+    followingUsers = follows.map((f) => f.following);
+    const followingIds = followingUsers.map((u) => u.id);
+    if (followingIds.length > 0) {
+      const latest = await prisma.post.findFirst({
+        where: { AND: [livePostWhere(), { authorId: { in: followingIds } }] },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+      latestFollowingPostAt = latest?.createdAt.toISOString() ?? null;
+    }
+  }
 
   const filtering = q !== "" || tag !== "";
 
@@ -63,6 +96,15 @@ export default async function Home({
           検索
         </button>
       </form>
+
+      {/* フィード切り替え（すべて／フォロー中｜フォロー中ユーザー）。タグ行の直上に配置。 */}
+      <FeedChips
+        show={!!me}
+        activeFeed="all"
+        allHref={buildQuery({ q, tag })}
+        followingUsers={followingUsers}
+        latestFollowingPostAt={latestFollowingPostAt}
+      />
 
       {/* タグナビ */}
       {topTags.length > 0 && (
