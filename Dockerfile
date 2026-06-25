@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Harbor (nageXym) — Next.js 16 + Prisma 7 本番イメージ。
 # sharp / symbol-sdk のため glibc ベース（bookworm-slim）を使用。
 
