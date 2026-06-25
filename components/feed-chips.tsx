@@ -57,7 +57,7 @@ export function FeedChips({
   if (!show) return null;
 
   return (
-    <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
+    <div className="mt-3 mb-6 flex items-center gap-2 overflow-x-auto pb-1">
       <Link
         href={allHref}
         className={`${CHIP_BASE} ${activeFeed === "all" ? CHIP_ACTIVE : CHIP_INACTIVE}`}

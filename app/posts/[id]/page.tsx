@@ -178,26 +178,23 @@ export default async function PostDetailPage({
     notFound();
   }
 
-  const [tipAgg, firstTipperRows, confirmedTipperCount] = await Promise.all([
+  const [tipAgg, firstTipperRows] = await Promise.all([
     prisma.tip.aggregate({
       where: { postId: post.id, answerId: null },
       _sum: { amount: true },
       _count: true,
     }),
-    // Tipper アイコン（先着順・確定済みのみ）。先頭7件。
+    // 先着1番目（最も早く確定した投げ銭）の Tipper。見出し横の 👑 アイコンと一覧の目印に使う。
     prisma.tip.findMany({
       where: { postId: post.id, answerId: null, confirmed: true },
       orderBy: { confirmedAt: "asc" },
-      take: 7,
+      take: 1,
       select: {
         id: true,
         fromUserId: true,
         anonymous: true,
         fromUser: { select: { avatarUrl: true, displayName: true } },
       },
-    }),
-    prisma.tip.count({
-      where: { postId: post.id, answerId: null, confirmed: true },
     }),
   ]);
   const tipTotal = tipAgg._sum.amount ? Number(tipAgg._sum.amount) : 0;
@@ -209,7 +206,6 @@ export default async function PostDetailPage({
     anonymous: t.anonymous,
     isFirst: i === 0,
   }));
-  const tipperMoreCount = Math.max(0, confirmedTipperCount - 6);
   // 先着1番目（最も早く確定した投げ銭）の Tip id。一覧で 👑 を付ける目印。
   const firstTipId = firstTipperRows[0]?.id ?? null;
 
@@ -661,9 +657,10 @@ export default async function PostDetailPage({
             <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
               合計 {formatXym(tipTotal)} XYM・{tipCount} 件
             </span>
+            {/* 見出し横は先着1番目の Tipper のみ（👑付き）を表示する。 */}
             <TipperAvatars
-              tippers={firstTippers}
-              moreCount={tipperMoreCount}
+              tippers={firstTippers.slice(0, 1)}
+              moreCount={0}
               variant="detail"
             />
           </div>
