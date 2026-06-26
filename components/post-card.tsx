@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatXym } from "@/lib/format";
 import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
+import { statusMeta } from "@/lib/thanks-status";
 
 export type PostCardData = {
   id: string;
@@ -22,6 +23,9 @@ export type PostCardData = {
   author: { displayName: string; avatarUrl: string | null };
   tippers?: TipperInfo[];
   tipperMoreCount?: number;
+  thanksCount?: number;
+  thanksStatus?: string;
+  isArchived?: boolean;
 };
 
 function formatDate(d: Date | string): string {
@@ -42,6 +46,12 @@ export function PostCard({
   const thumb = isUrl ? post.ogpImageUrl : post.coverImage;
   const heading = isUrl ? post.ogpTitle || post.title : post.title;
   const excerpt = post.excerpt ?? "";
+
+  // Harbor Thanks ステータスバッジ。docked（停泊中）は省略。Archive を優先表示。
+  const status = post.thanksStatus ? statusMeta(post.thanksStatus) : null;
+  const showStatusBadge =
+    post.isArchived || (status !== null && status.key !== "docked");
+  const thanksCount = post.thanksCount ?? 0;
 
   return (
     <li className="overflow-hidden border-b border-gray-200 transition hover:border-gray-300 max-sm:last:border-b-0 sm:rounded-lg sm:border dark:border-gray-800 dark:hover:border-gray-700">
@@ -127,9 +137,24 @@ export function PostCard({
             </p>
             <p className="mt-1 text-[11px] text-gray-400">
               {formatDate(post.createdAt)}・👁 {post.viewCount ?? 0}
+              {thanksCount > 0 && <>・🎁 Thanks × {thanksCount}</>}
             </p>
-            {post.tags.length > 0 && (
-              <p className="mt-1 flex flex-wrap gap-1">
+            {(showStatusBadge || post.tags.length > 0) && (
+              <p className="mt-1 flex flex-wrap items-center gap-1">
+                {/* 航海ステータス/Archive バッジ。タグと同じ行に並べる（カバー画像に被せない）。 */}
+                {showStatusBadge && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                      post.isArchived
+                        ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                        : "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    }`}
+                  >
+                    {post.isArchived
+                      ? "⚓ Archive"
+                      : `${status!.emoji} ${status!.label}`}
+                  </span>
+                )}
                 {post.tags.slice(0, 3).map((t) => (
                   <span
                     key={t}

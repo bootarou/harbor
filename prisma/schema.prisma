@@ -164,6 +164,11 @@ model Post {
   tipsEnabled    Boolean @default(true) // URL投稿の投げ銭ON/OFF（通常記事は常に可）
   viewCount      Int     @default(0) // 閲覧数（インプレッション）
 
+  // Harbor Thanks（記事の成長指標）。送金ロジック・金額には一切関与しない表示用メタ。
+  thanksCount  Int     @default(0) // 送信済み Thanks 件数（= 感謝した読者数）
+  thanksStatus String  @default("docked") // docked/preparing/sailed/voyaging/discovery
+  isArchived   Boolean @default(false) // Harbor Archive（殿堂入り）フラグ
+
   // アンケート（任意・全投稿タイプ）: 選択肢が2件以上ある時のみ有効。
   pollClosesAt   DateTime? // 投票締め切り（任意・未設定なら無期限）
 
@@ -191,6 +196,7 @@ model Post {
   @@index([authorId])
   @@index([published, createdAt])
   @@index([tags], type: Gin)
+  @@index([isArchived])
 }
 
 model Bookmark {

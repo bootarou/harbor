@@ -51,6 +51,9 @@ export default async function FeedPage() {
           ogpTitle: true,
           ogpImageUrl: true,
           ogpSiteName: true,
+          thanksCount: true,
+          thanksStatus: true,
+          isArchived: true,
           author: { select: { displayName: true, avatarUrl: true } },
           tips: {
             where: { answerId: null },

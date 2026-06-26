@@ -11,7 +11,8 @@ export type NotificationType =
   | "purchase"
   | "new_post"
   | "follow"
-  | "qa_best_answer";
+  | "qa_best_answer"
+  | "status_up";
 
 // 種別の定義（ラベルと既定 ON/OFF）。設定画面・正規化に使う。
 export const NOTIFICATION_TYPES: {
@@ -26,6 +27,7 @@ export const NOTIFICATION_TYPES: {
   { key: "new_post", label: "フォロー中の著者が新記事を投稿", default: false },
   { key: "follow", label: "フォロワーが増えた", default: false },
   { key: "qa_best_answer", label: "回答がベストアンサーに選ばれた", default: true },
+  { key: "status_up", label: "記事のHarborステータスが上がった", default: true },
 ];
 
 export type NotificationPrefs = Record<NotificationType, boolean>;
@@ -239,6 +241,12 @@ export function notificationText(n: {
       return {
         title: "ベストアンサーに選ばれました 🏆",
         body: `あなたの回答が「${post}」のベストアンサーに選ばれました`,
+      };
+    case "status_up":
+      // actorName に「🚢出港」のような絵文字＋ステータス名を入れて渡す。
+      return {
+        title: "記事が次の港へ ⚓",
+        body: `あなたの記事「${post}」が${who}しました！`,
       };
     default:
       return { title: "通知", body: post };

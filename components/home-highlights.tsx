@@ -4,10 +4,41 @@ import { formatXym } from "@/lib/format";
 
 // サムネなし・小さめカード・テキスト中心のトップページ・ハイライト。
 export function HomeHighlights({ data }: { data: HomeHighlights }) {
-  const { tipRanking, accessRanking, featured, ticker } = data;
+  const { archive, tipRanking, accessRanking, featured, ticker } = data;
 
   return (
     <div className="mb-10 flex flex-col gap-6">
+      {/* Harbor Archive（殿堂入り）。0件のときはセクションごと非表示。 */}
+      {archive.length > 0 && (
+        <section className="rounded-lg border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 p-3 dark:border-amber-700 dark:from-amber-950/40 dark:to-yellow-950/30">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-sm font-bold text-amber-800 dark:text-amber-200">
+              ⚓ Harbor Archive
+            </h2>
+            <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
+              ランキングではなく、Harborの文化として残る記事
+            </p>
+          </div>
+          <ol className="flex flex-col divide-y divide-amber-200/70 dark:divide-amber-800/60">
+            {archive.map((r) => (
+              <li key={r.id} className="py-1.5">
+                <Link
+                  href={`/posts/${r.id}`}
+                  className="block min-w-0 hover:underline"
+                >
+                  <span className="block truncate text-sm font-medium">
+                    {r.title}
+                  </span>
+                  <span className="block truncate text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                    {r.author}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       {/* 投げ銭ティッカー */}
       {ticker.length > 0 && (
         <section className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/30">

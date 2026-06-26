@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
 import { absoluteUrl } from "@/lib/site";
 import { REACTION_TYPES } from "@/lib/thanks";
+import { statusMeta } from "@/lib/thanks-status";
 import { CoverImage } from "@/components/cover-image";
 import { FollowButton } from "@/components/follow-button";
 import { ShareButtons } from "@/components/share-buttons";
@@ -87,7 +88,13 @@ export default async function UserProfilePage({
         posts: {
           where: livePostWhere(),
           orderBy: { createdAt: "desc" },
-          select: { id: true, title: true, createdAt: true, tags: true },
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            tags: true,
+            thanksStatus: true,
+          },
         },
       },
     }),
@@ -112,8 +119,16 @@ export default async function UserProfilePage({
       : false;
 
   // 統計サマリーの集計（すべてサーバー側で Prisma 集計）。
-  const [tipReceived, reactionGroups, viewAgg, purchaseAgg, recentSentTips] =
-    await Promise.all([
+  const [
+    tipReceived,
+    reactionGroups,
+    viewAgg,
+    purchaseAgg,
+    recentSentTips,
+    thanksSentCount,
+    archiveCount,
+    discoveryCount,
+  ] = await Promise.all([
       // 投げ銭受け取り累計: 確定済みで toAddress=本人の受取アドレス。
       prisma.tip.aggregate({
         _sum: { amount: true },
@@ -167,6 +182,14 @@ export default async function UserProfilePage({
               };
             }[]
           ),
+      // Harbor Thanks: 本人が読者へ送ったThanks件数（= 感謝した読者数）。
+      prisma.thanks.count({ where: { senderUserId: user.id } }),
+      // Harbor Archive（殿堂入り）に入った本人の記事数。
+      prisma.post.count({ where: { authorId: user.id, isArchived: true } }),
+      // 「新大陸発見」（discovery）まで到達した本人の記事数。
+      prisma.post.count({
+        where: { authorId: user.id, thanksStatus: "discovery" },
+      }),
     ]);
 
   // Decimal → 2桁固定の XYM 表記。
@@ -378,6 +401,25 @@ export default async function UserProfilePage({
         ))}
       </section>
 
+      {/* Harbor 航海実績: 感謝した読者数・殿堂入り・新大陸発見の記事数 */}
+      <section className="mt-3 grid grid-cols-3 gap-3">
+        {[
+          { label: "🎁 感謝した読者", value: `${thanksSentCount}人` },
+          { label: "🏝️ 新大陸発見", value: `${discoveryCount}本` },
+          { label: "⚓ 殿堂入り", value: `${archiveCount}本` },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+          >
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {s.label}
+            </p>
+            <p className="mt-1 truncate text-base font-semibold">{s.value}</p>
+          </div>
+        ))}
+      </section>
+
       {/* リアクション内訳: 種類ごとにアイコンと件数を表示（0件も表示） */}
       <section className="mt-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
         <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
@@ -490,19 +532,34 @@ export default async function UserProfilePage({
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
-            {visiblePosts.map((post) => (
-              <li key={post.id} className="py-3">
-                <Link
-                  href={`/posts/${post.id}`}
-                  className="font-medium hover:underline"
-                >
-                  {post.title}
-                </Link>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                  {formatDate(post.createdAt)}
-                </p>
-              </li>
-            ))}
+            {visiblePosts.map((post) => {
+              // docked（停泊中）は素のステータスなのでバッジ省略。
+              const meta = statusMeta(post.thanksStatus);
+              const showBadge = meta.key !== "docked";
+              return (
+                <li key={post.id} className="py-3">
+                  <div className="flex items-baseline gap-2">
+                    <Link
+                      href={`/posts/${post.id}`}
+                      className="min-w-0 font-medium hover:underline"
+                    >
+                      {post.title}
+                    </Link>
+                    {showBadge && (
+                      <span
+                        title={meta.label}
+                        className="shrink-0 text-xs text-gray-500 dark:text-gray-400"
+                      >
+                        {meta.emoji} {meta.label}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {formatDate(post.createdAt)}
+                  </p>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

@@ -7,6 +7,8 @@ import { thanksApiSchema } from "@/lib/validations";
 import { thanksAmount, THANKS_CONFIG } from "@/lib/thanks";
 import { verifyTransferByHash } from "@/lib/purchases/verify";
 import { fetchXymJpyRate } from "@/lib/rates";
+import { statusForCount, statusMeta, statusRank } from "@/lib/thanks-status";
+import { notify } from "@/lib/notifications";
 
 // Thanks 送金の記録。投稿者(送信者)がリアクションした読者へ送った送金を、
 // サーバーがノードで検証してから記録する（運営は送金を預からない）。
@@ -130,6 +132,45 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Thanks の記録に失敗しました" }, { status: 500 });
   }
 
+  // Harbor Thanks: 送金は一切変更せず、記事の成長指標（thanksCount/ステータス）を更新する。
+  // ステータスが上がったら著者へ通知（status_up）。失敗しても Thanks 記録自体は成功扱い。
+  await updatePostThanksStatus(reaction.postId);
+
   revalidatePath("/notifications");
   return NextResponse.json({ ok: true, confirmed: verified.confirmed });
+}
+
+// 対象記事の送信済み Thanks 件数を集計してステータスを再計算・保存する。
+// ※ Thanks の確定ポーラーは無く pending が確定へ遷移しないため、件数は
+//   「記録済み（オンチェーン検証済み）の Thanks 行数」= 感謝した読者数 を採用する。
+async function updatePostThanksStatus(postId: string): Promise<void> {
+  try {
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      select: { authorId: true, title: true, thanksStatus: true },
+    });
+    if (!post) return;
+
+    const thanksCount = await prisma.thanks.count({ where: { postId } });
+    const newStatus = statusForCount(thanksCount);
+
+    await prisma.post.update({
+      where: { id: postId },
+      data: { thanksCount, thanksStatus: newStatus },
+    });
+
+    if (statusRank(newStatus) > statusRank(post.thanksStatus)) {
+      const meta = statusMeta(newStatus);
+      await notify({
+        userId: post.authorId,
+        type: "status_up",
+        postId,
+        postTitle: post.title,
+        // 通知本文「…が🚢出港しました！」用に絵文字＋ステータス名を渡す。
+        actorName: `${meta.emoji}${meta.label}`,
+      });
+    }
+  } catch (e) {
+    console.error("updatePostThanksStatus error", e);
+  }
 }

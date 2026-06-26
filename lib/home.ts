@@ -36,7 +36,14 @@ export type TickerRow = {
   amountXym: number;
 };
 
+export type ArchiveRow = {
+  id: string;
+  title: string;
+  author: string;
+};
+
 export type HomeHighlights = {
+  archive: ArchiveRow[];
   tipRanking: TipRankRow[];
   accessRanking: AccessRankRow[];
   featured: FeaturedRow[];
@@ -48,8 +55,19 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export async function getHomeHighlights(): Promise<HomeHighlights> {
   const weekAgo = new Date(Date.now() - WEEK_MS);
 
-  const [tipGroups, accessPosts, featuredCandidates, recentTips] =
+  const [archivePosts, tipGroups, accessPosts, featuredCandidates, recentTips] =
     await Promise.all([
+      // Harbor Archive: 殿堂入り記事（公開中）を最新順で最大3件。
+      prisma.post.findMany({
+        where: { AND: [livePostWhere(), { isArchived: true }] },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          title: true,
+          author: { select: { displayName: true } },
+        },
+      }),
       // 投げ銭ランキング（今週）: 直近7日の投げ銭額合計上位。
       prisma.tip.groupBy({
         by: ["postId"],
@@ -152,5 +170,11 @@ export async function getHomeHighlights(): Promise<HomeHighlights> {
     amountXym: Number(t.amount),
   }));
 
-  return { tipRanking, accessRanking, featured, ticker };
+  const archive: ArchiveRow[] = archivePosts.map((p) => ({
+    id: p.id,
+    title: p.title,
+    author: p.author.displayName,
+  }));
+
+  return { archive, tipRanking, accessRanking, featured, ticker };
 }

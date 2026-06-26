@@ -7,6 +7,7 @@ import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
 import { TipBox } from "@/components/tip/tip-box";
 import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
+import { statusMeta, nextStatusHint } from "@/lib/thanks-status";
 import { AnswerForm } from "@/components/qa/answer-form";
 import { PollBox } from "@/components/poll/poll-box";
 import { selectBestAnswer } from "@/app/answers/actions";
@@ -130,6 +131,9 @@ export default async function PostDetailPage({
       ogpSiteName: true,
       tipsEnabled: true,
       viewCount: true,
+      thanksCount: true,
+      thanksStatus: true,
+      isArchived: true,
       paid: true,
       paidHtml: true,
       priceAmount: true,
@@ -638,13 +642,89 @@ export default async function PostDetailPage({
         </section>
       )}
 
+      {/* リアクション＋Harbor Thanks ステータスを1枚のカードに統合。
+          上にステータス（リアクションへのThanksで進む航海ステータス）、
+          下にリアクションボタンを置き、「リアクション→Thanks→成長」の流れを示す。 */}
       <section className="mt-10">
-        <ReactionBar
-          postId={post.id}
-          counts={reactionCounts}
-          mine={myReactionKeys}
-          isLoggedIn={currentUserId !== null}
-        />
+        <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+          {post.isArchived ? (
+            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 px-4 py-3 text-amber-800 dark:from-amber-950 dark:to-yellow-950 dark:text-amber-200">
+              <p className="flex items-center gap-2 text-sm font-bold">
+                <span className="text-lg">⚓</span> Harbor Archive 殿堂入り
+              </p>
+              <p className="mt-1 text-xs">
+                ランキングではなく、Harborの文化として残る記事です。
+                {(() => {
+                  const m = statusMeta(post.thanksStatus);
+                  return ` ${m.emoji} ${m.label}・🎁 ${post.thanksCount} Thanks`;
+                })()}
+              </p>
+            </div>
+          ) : (
+            (() => {
+              const meta = statusMeta(post.thanksStatus);
+              const hint = nextStatusHint(post.thanksCount);
+              return (
+                <div className="px-4 py-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <span className="text-lg">{meta.emoji}</span>
+                    {meta.label}
+                    {post.thanksCount > 0 && (
+                      <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                        🎁 {post.thanksCount} Thanks
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                    {meta.description}
+                  </p>
+                  {hint &&
+                    (() => {
+                      // 現ティア下限(meta.min)→次ティア(hint.status.min)の達成率をバー表示。
+                      const span = hint.status.min - meta.min;
+                      const progress = span > 0 ? (post.thanksCount - meta.min) / span : 0;
+                      const pct = Math.min(100, Math.max(0, Math.round(progress * 100)));
+                      return (
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between text-xs font-medium text-teal-700 dark:text-teal-300">
+                            <span>
+                              あと {hint.remaining} Thanksで{hint.status.emoji}
+                              {hint.status.label}
+                            </span>
+                            <span className="tabular-nums text-gray-400">
+                              {post.thanksCount}/{hint.status.min}
+                            </span>
+                          </div>
+                          <div
+                            className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
+                            role="progressbar"
+                            aria-valuenow={pct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                          >
+                            <div
+                              className="h-full rounded-full bg-teal-500 transition-all dark:bg-teal-400"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                </div>
+              );
+            })()
+          )}
+
+          {/* 区切り線でステータスとリアクションを連結 */}
+          <div className="border-t border-gray-200 p-4 dark:border-gray-800">
+            <ReactionBar
+              postId={post.id}
+              counts={reactionCounts}
+              mine={myReactionKeys}
+              isLoggedIn={currentUserId !== null}
+            />
+          </div>
+        </div>
       </section>
 
       {tipAllowed && (

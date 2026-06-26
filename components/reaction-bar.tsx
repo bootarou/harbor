@@ -33,7 +33,7 @@ export function ReactionBar({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+    <div>
       <p className="mb-3 text-sm font-semibold">この記事はどうでしたか？</p>
       <div className="flex flex-wrap gap-2">
         {REACTION_TYPES.map((r) => {
