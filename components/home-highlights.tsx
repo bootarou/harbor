@@ -4,7 +4,8 @@ import { formatXym } from "@/lib/format";
 
 // サムネなし・小さめカード・テキスト中心のトップページ・ハイライト。
 export function HomeHighlights({ data }: { data: HomeHighlights }) {
-  const { archive, tipRanking, accessRanking, featured, ticker } = data;
+  const { archive, recentlySailed, tipRanking, accessRanking, featured, ticker } =
+    data;
 
   return (
     <div className="mb-10 flex flex-col gap-6">
@@ -24,13 +25,54 @@ export function HomeHighlights({ data }: { data: HomeHighlights }) {
               <li key={r.id} className="py-1.5">
                 <Link
                   href={`/posts/${r.id}`}
-                  className="block min-w-0 hover:underline"
+                  className="flex min-w-0 items-start gap-1.5 hover:underline"
                 >
-                  <span className="block truncate text-sm font-medium">
-                    {r.title}
+                  <span aria-hidden="true" className="shrink-0 text-sm">
+                    ⚓
                   </span>
-                  <span className="block truncate text-[11px] text-amber-700/80 dark:text-amber-300/80">
-                    {r.author}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">
+                      {r.title}
+                    </span>
+                    <span className="block truncate text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                      {r.author}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {/* 🚢 最近出港した記事（sailed/voyaging）。0件のときはセクションごと非表示。 */}
+      {recentlySailed.length > 0 && (
+        <section className="rounded-lg border border-teal-200 bg-teal-50/50 p-3 dark:border-teal-900 dark:bg-teal-950/20">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-sm font-bold text-teal-800 dark:text-teal-200">
+              🚢 最近出港した記事
+            </h2>
+            <p className="text-[11px] text-teal-700/80 dark:text-teal-300/80">
+              多くの感謝を受けて航海に出た記事
+            </p>
+          </div>
+          <ol className="flex flex-col divide-y divide-teal-200/70 dark:divide-teal-800/60">
+            {recentlySailed.map((r) => (
+              <li key={r.id} className="py-1.5">
+                <Link
+                  href={`/posts/${r.id}`}
+                  className="flex min-w-0 items-start gap-1.5 hover:underline"
+                >
+                  <span aria-hidden="true" className="shrink-0 text-sm">
+                    🚢
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">
+                      {r.title}
+                    </span>
+                    <span className="block truncate text-[11px] text-teal-700/80 dark:text-teal-300/80">
+                      {r.author}
+                    </span>
                   </span>
                 </Link>
               </li>

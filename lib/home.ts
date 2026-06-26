@@ -42,8 +42,15 @@ export type ArchiveRow = {
   author: string;
 };
 
+export type SailedRow = {
+  id: string;
+  title: string;
+  author: string;
+};
+
 export type HomeHighlights = {
   archive: ArchiveRow[];
+  recentlySailed: SailedRow[];
   tipRanking: TipRankRow[];
   accessRanking: AccessRankRow[];
   featured: FeaturedRow[];
@@ -55,13 +62,35 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export async function getHomeHighlights(): Promise<HomeHighlights> {
   const weekAgo = new Date(Date.now() - WEEK_MS);
 
-  const [archivePosts, tipGroups, accessPosts, featuredCandidates, recentTips] =
-    await Promise.all([
-      // Harbor Archive: 殿堂入り記事（公開中）を最新順で最大3件。
+  const [
+    archivePosts,
+    sailedPosts,
+    tipGroups,
+    accessPosts,
+    featuredCandidates,
+    recentTips,
+  ] = await Promise.all([
+      // Harbor Archive: 殿堂入り（thanksStatus="discovery"）の公開記事を Archive入り日時の新しい順で5件。
+      // 通報のある記事は掲載しない（Archive入り後に通報が付けば自動的に外れる）。
+      // 旧データは archivedAt が null のため nulls last（後ろ）に置き、createdAt で補助ソートする。
       prisma.post.findMany({
-        where: { AND: [livePostWhere(), { isArchived: true }] },
-        orderBy: { createdAt: "desc" },
-        take: 3,
+        where: { AND: [livePostWhere(), { isArchived: true }, { reports: { none: {} } }] },
+        orderBy: [{ archivedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          author: { select: { displayName: true } },
+        },
+      }),
+      // 最近出港した記事: sailed/voyaging（discovery=Archiveは上で表示済みのため除外）を
+      // 出港日時(sailedAt)の新しい順で5件。旧データは sailedAt null → nulls last。
+      prisma.post.findMany({
+        where: {
+          AND: [livePostWhere(), { thanksStatus: { in: ["sailed", "voyaging"] } }],
+        },
+        orderBy: [{ sailedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+        take: 5,
         select: {
           id: true,
           title: true,
@@ -176,5 +205,11 @@ export async function getHomeHighlights(): Promise<HomeHighlights> {
     author: p.author.displayName,
   }));
 
-  return { archive, tipRanking, accessRanking, featured, ticker };
+  const recentlySailed: SailedRow[] = sailedPosts.map((p) => ({
+    id: p.id,
+    title: p.title,
+    author: p.author.displayName,
+  }));
+
+  return { archive, recentlySailed, tipRanking, accessRanking, featured, ticker };
 }

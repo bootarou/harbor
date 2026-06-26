@@ -147,17 +147,33 @@ async function updatePostThanksStatus(postId: string): Promise<void> {
   try {
     const post = await prisma.post.findUnique({
       where: { id: postId },
-      select: { authorId: true, title: true, thanksStatus: true },
+      select: {
+        authorId: true,
+        title: true,
+        thanksStatus: true,
+        sailedAt: true,
+        archivedAt: true,
+      },
     });
     if (!post) return;
 
     const thanksCount = await prisma.thanks.count({ where: { postId } });
     const newStatus = statusForCount(thanksCount);
 
-    await prisma.post.update({
-      where: { id: postId },
-      data: { thanksCount, thanksStatus: newStatus },
-    });
+    // ステータス到達日時を記録（一度設定したら上書きしない）。
+    // - sailed 以上に初めて到達 → sailedAt
+    // - discovery 到達 → archivedAt ＋ isArchived（Archive入り）
+    const data: Prisma.PostUpdateInput = { thanksCount, thanksStatus: newStatus };
+    const now = new Date();
+    if (statusRank(newStatus) >= statusRank("sailed") && post.sailedAt === null) {
+      data.sailedAt = now;
+    }
+    if (newStatus === "discovery" && post.archivedAt === null) {
+      data.archivedAt = now;
+      data.isArchived = true;
+    }
+
+    await prisma.post.update({ where: { id: postId }, data });
 
     if (statusRank(newStatus) > statusRank(post.thanksStatus)) {
       const meta = statusMeta(newStatus);
