@@ -58,6 +58,8 @@ export function SiteHeader() {
         { href: "/tips", label: "投げ銭履歴" },
         // 自分の公開ページ（共有しやすい）へ。編集はそのページの「編集」ボタンから。
         { href: userId ? `/users/${userId}` : "/profile", label: "プロフィール" },
+        // Harbor Status（港の管制塔）。認証不要だがプロフィールの右に置く。
+        { href: "/status", label: "⚓ 港のいま" },
       ]
     : [];
 
@@ -107,6 +109,9 @@ export function SiteHeader() {
             </>
           ) : (
             <>
+              <Link href="/status" className="hover:underline">
+                ⚓ 港のいま
+              </Link>
               <Link href="/login" className="hover:underline">
                 ログイン
               </Link>
@@ -190,6 +195,9 @@ export function SiteHeader() {
               </>
             ) : (
               <>
+                <Link href="/status" onClick={closeDetails} className="rounded-md px-2 py-2 hover:underline">
+                  ⚓ 港のいま
+                </Link>
                 <Link href="/login" onClick={closeDetails} className="rounded-md px-2 py-2 hover:underline">
                   ログイン
                 </Link>

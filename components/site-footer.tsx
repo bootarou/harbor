@@ -10,6 +10,9 @@ export function SiteFooter() {
     <footer className="mt-auto border-t border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-4xl flex-col gap-2 px-6 py-6 text-xs text-gray-500 dark:text-gray-400">
         <nav className="flex flex-wrap gap-x-4 gap-y-1">
+          <Link href="/status" className="hover:underline">
+            🌊 Harbor Status
+          </Link>
           <Link href="/terms" className="hover:underline">
             利用規約
           </Link>
