@@ -17,12 +17,18 @@ export function TipBox({
   answerId,
   recipientAddress,
   isAuthor,
+  compact = false,
+  triggerLabel,
 }: {
   postId: string;
   // 指定時は QA 回答への投げ銭として扱う（宛先は回答者）。
   answerId?: string;
   recipientAddress: string | null;
   isAuthor: boolean;
+  // compact: 枠なし＋小さいピンクのトリガーボタンで表示（トップの「応援する」用）。
+  compact?: boolean;
+  // トリガーボタンの文言を上書きする（既定は「投げ銭する」）。
+  triggerLabel?: string;
 }) {
   const isAnswer = answerId !== undefined;
   const router = useRouter();
@@ -162,14 +168,28 @@ export function TipBox({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+    <div
+      className={
+        compact
+          ? // 開いたときはパネルを全幅にして折り返す（狭い行内でのはみ出し防止）。
+            open
+            ? "w-full min-w-0 rounded-lg border border-rose-200 p-3 dark:border-rose-900"
+            : "shrink-0"
+          : "rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+      }
+    >
       {!open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+          className={
+            compact
+              ? "rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:hover:bg-rose-900/60"
+              : "rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+          }
         >
-          {isAnswer ? "💴 この回答に投げ銭する" : "💴 この記事に投げ銭する"}
+          {triggerLabel ??
+            (isAnswer ? "💴 この回答に投げ銭する" : "💴 この記事に投げ銭する")}
         </button>
       ) : (
         <div className="flex flex-col gap-4">
