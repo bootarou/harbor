@@ -3,9 +3,11 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostFeed } from "@/components/post-feed";
 import { HomeHighlights } from "@/components/home-highlights";
+import { TipRateIndicator } from "@/components/top/tip-rate-indicator";
 import { FeedChips } from "@/components/feed-chips";
 import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
 import { getHomeHighlights } from "@/lib/home";
+import { getTipRateStats } from "@/lib/tip-rate";
 
 function buildQuery(opts: { q?: string; tag?: string }): string {
   const sp = new URLSearchParams();
@@ -57,13 +59,15 @@ export default async function Home({
 
   const filtering = q !== "" || tag !== "";
 
-  const [{ posts, hasMore }, total, tagRows, highlights] = await Promise.all([
+  const [{ posts, hasMore }, total, tagRows, highlights, tipRate] = await Promise.all([
     getPostsPage({ page: 1, q, tag }),
     filtering ? prisma.post.count({ where: buildPostWhere({ q, tag }) }) : Promise.resolve(0),
     // タグナビ用（公開中の記事のタグを集計）
     prisma.post.findMany({ where: livePostWhere(), select: { tags: true } }),
     // トップのハイライト（絞り込み中は不要）
     filtering ? Promise.resolve(null) : getHomeHighlights(),
+    // 投げ銭率インジケーター（絞り込み中は不要）
+    filtering ? Promise.resolve(null) : getTipRateStats(),
   ]);
 
   // 上位タグ
@@ -77,6 +81,9 @@ export default async function Home({
 
   return (
     <main className="mx-auto w-full max-w-6xl px-2 py-10 sm:px-6">
+      {/* 投げ銭率インジケーター（最上部・絞り込み中は非表示） */}
+      {!filtering && tipRate && <TipRateIndicator stats={tipRate} />}
+
       <h1 className="mb-6 text-2xl font-bold">記事一覧</h1>
 
       {/* 検索 */}
@@ -144,7 +151,9 @@ export default async function Home({
       {!filtering && highlights && <HomeHighlights data={highlights} />}
 
       {!filtering && (
-        <h2 className="mb-4 text-lg font-bold">新着記事</h2>
+        <h2 id="latest-articles" className="mb-4 scroll-mt-4 text-lg font-bold">
+          新着記事
+        </h2>
       )}
 
       {posts.length === 0 ? (

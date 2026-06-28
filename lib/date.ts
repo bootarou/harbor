@@ -23,3 +23,14 @@ export function jstMonthStart(now: Date = new Date()): Date {
   }).format(now); // "YYYY-MM"
   return new Date(`${ym}-01T00:00:00+09:00`);
 }
+
+// JST のローカル日付文字列 "YYYY-MM-DD" を返す（日別集計のバケットキー用）。
+// 文字列は辞書順 = 時系列順なので、そのまま範囲比較・並び替えに使える。
+export function jstDateString(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
