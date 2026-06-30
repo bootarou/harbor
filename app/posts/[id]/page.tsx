@@ -22,6 +22,7 @@ import { renderLinkCardsHtml } from "@/lib/link-preview";
 import { formatXym } from "@/lib/format";
 import { tipStatus } from "@/lib/tips/status";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
+import { tiktokEmbedId, tiktokEmbedUrl } from "@/lib/tiktok";
 import { absoluteUrl } from "@/lib/site";
 
 function shortAddress(addr: string): string {
@@ -243,6 +244,7 @@ export default async function PostDetailPage({
   const isUrl = post.postType === "external_url";
   const tipAllowed = !isUrl || post.tipsEnabled;
   const ytId = isUrl ? youtubeEmbedId(post.url) : null;
+  const tkId = isUrl && !ytId ? tiktokEmbedId(post.url) : null;
 
   // リアクション集計と、ログインユーザー自身のリアクション
   const [reactionGroups, myReactions] = await Promise.all([
@@ -421,6 +423,29 @@ export default async function PostDetailPage({
                     className="self-start text-xs text-gray-500 underline dark:text-gray-400"
                   >
                     YouTube で開く
+                  </a>
+                )}
+              </div>
+            ) : tkId ? (
+              <div className="flex flex-col gap-2">
+                <div className="mx-auto aspect-[9/16] w-full max-w-sm overflow-hidden rounded-lg bg-black">
+                  <iframe
+                    src={tiktokEmbedUrl(tkId)}
+                    title={post.ogpTitle || "TikTok video"}
+                    className="h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                  />
+                </div>
+                {post.url && (
+                  <a
+                    href={post.url}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="self-start text-xs text-gray-500 underline dark:text-gray-400"
+                  >
+                    TikTok で開く
                   </a>
                 )}
               </div>

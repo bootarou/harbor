@@ -197,6 +197,51 @@ async function fetchYouTube(parsed: URL, id: string): Promise<Ogp> {
   };
 }
 
+// TikTok URL から動画ID(数値)を抽出（/@user/video/{id} / /v/{id}.html / /embed / /player）。
+function tikTokId(u: URL): string | null {
+  const host = u.hostname.replace(/^(www\.|m\.|vt\.|vm\.)/, "");
+  if (host !== "tiktok.com") return null;
+  const m =
+    u.pathname.match(/\/video\/(\d{6,30})/) ??
+    u.pathname.match(/^\/v\/(\d{6,30})/) ??
+    u.pathname.match(/^\/embed(?:\/v2)?\/(\d{6,30})/) ??
+    u.pathname.match(/^\/player\/v1\/(\d{6,30})/);
+  return m ? m[1] : null;
+}
+
+// TikTok は JS レンダリングのため og:image をスクレイピングできない。
+// oEmbed でタイトル・著者・サムネイルを取得してリンクカードを生成する。
+async function fetchTikTok(parsed: URL): Promise<Ogp> {
+  let title = "";
+  let author = "";
+  let imageUrl = "";
+  try {
+    const o = await fetch(
+      `https://www.tiktok.com/oembed?url=${encodeURIComponent(parsed.toString())}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (o.ok) {
+      const d = (await o.json()) as {
+        title?: string;
+        author_name?: string;
+        thumbnail_url?: string;
+      };
+      title = (d.title ?? "").trim();
+      author = (d.author_name ?? "").trim();
+      imageUrl = (d.thumbnail_url ?? "").trim();
+    }
+  } catch {
+    // oEmbed 失敗時はメタ情報なしで生成
+  }
+  return {
+    url: parsed.toString(),
+    title: (title || "TikTok 動画").slice(0, 300),
+    description: (author ? `TikTok · ${author}` : "TikTok").slice(0, 600),
+    imageUrl: imageUrl.slice(0, 2048),
+    siteName: "TikTok",
+  };
+}
+
 function metaContent(html: string, patterns: RegExp[]): string {
   for (const re of patterns) {
     const m = re.exec(html);
@@ -243,6 +288,14 @@ export async function fetchOgp(rawUrl: string): Promise<Ogp> {
   const ytId = youTubeId(parsed);
   if (ytId) {
     return fetchYouTube(parsed, ytId);
+  }
+  // TikTok も専用処理（oEmbed でタイトル＋著者＋サムネイル取得）。
+  // 短縮URL（vm./vt.tiktok.com）はIDを含まないが oEmbed が解決するため host で判定。
+  if (
+    /(?:^|\.)tiktok\.com$/.test(parsed.hostname.replace(/^www\./, "")) ||
+    tikTokId(parsed)
+  ) {
+    return fetchTikTok(parsed);
   }
 
   // SSRF 対策: DNS 解決して全 IP を検証し、リダイレクトは手動追従で各ホップ再検証する。

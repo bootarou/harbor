@@ -19,8 +19,8 @@ const csp = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   `connect-src 'self' https:${isDev ? " ws:" : ""}`,
-  // YouTube 埋め込み（外部URL投稿）を許可。frame-src 未指定だと default-src 'self' で iframe がブロックされる。
-  "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
+  // YouTube / TikTok 埋め込み（外部URL投稿）を許可。frame-src 未指定だと default-src 'self' で iframe がブロックされる。
+  "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com https://www.tiktok.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
