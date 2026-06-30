@@ -26,9 +26,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function compute(): Promise<TipRateStats> {
   const [allPosts, allTips, reactionsTotal] = await Promise.all([
-    // 公開済み記事すべて（公開日と confirmed Tip 件数）。lib/home.ts でも全件取得しており踏襲。
+    // 公開済み＆投げ銭可能な記事すべて（公開日と confirmed Tip 件数）。
+    // tipsEnabled=false（URL投稿で投げ銭OFF）は構造的に投げ銭を受け取れないため母数から除外する。
     prisma.post.findMany({
-      where: { published: true },
+      where: { published: true, tipsEnabled: true },
       select: {
         createdAt: true,
         _count: { select: { tips: { where: { confirmed: true } } } },

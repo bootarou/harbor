@@ -39,6 +39,8 @@ export async function getUndiscoveredPosts(opts: {
   const where = {
     AND: [
       livePostWhere(),
+      // 投げ銭OFF（URL投稿）の記事は構造的に投げ銭を受け取れないため対象外。
+      { tipsEnabled: true },
       // confirmed な Tip が1件も無い記事のみ。
       // 自分の記事も含めて表示し（除外しない）、ボタン側で「自分の記事は応援ボタン非表示」とする。
       { tips: { none: { confirmed: true } } },
@@ -58,9 +60,15 @@ export async function getUndiscoveredPosts(opts: {
   //   公開記事が1件以上 かつ 未灯（confirmed Tip ゼロ）の記事が globally 0件 のときだけ true。
   // これにより「そもそも公開記事ゼロ（空の港）」を 100%扱いしてしまう乖離を防ぐ。
   const [totalLive, globalUndiscovered] = await Promise.all([
-    prisma.post.count({ where: livePostWhere() }),
+    prisma.post.count({ where: { AND: [livePostWhere(), { tipsEnabled: true }] } }),
     prisma.post.count({
-      where: { AND: [livePostWhere(), { tips: { none: { confirmed: true } } }] },
+      where: {
+        AND: [
+          livePostWhere(),
+          { tipsEnabled: true },
+          { tips: { none: { confirmed: true } } },
+        ],
+      },
     }),
   ]);
   const allDiscovered = totalLive > 0 && globalUndiscovered === 0;
