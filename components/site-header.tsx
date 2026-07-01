@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -29,8 +29,37 @@ export function SiteHeader() {
   const { data: session } = useSession();
   const [unread, setUnread] = useState(0);
   const pathname = usePathname();
+  // モバイルのハンバーガーメニュー（native <details>）。
+  // メニュー外タップ／Esc で閉じるために ref で開閉を制御する。
+  const menuRef = useRef<HTMLDetailsElement>(null);
 
   const userId = session?.user?.id;
+
+  // メニューを開いている間、メニュー外をタップ（またはEsc）したら閉じる。
+  // native <details> は外側クリックで閉じないため、明示的に制御する。
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      const el = menuRef.current;
+      if (!el?.open) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        el.removeAttribute("open");
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") menuRef.current?.removeAttribute("open");
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  // 画面遷移したらメニューを閉じる（遷移先で開いたままにしない）。
+  useEffect(() => {
+    menuRef.current?.removeAttribute("open");
+  }, [pathname]);
 
   // 未読通知数を取得。ログイン中は画面遷移ごとに再取得し、
   // /notifications を開くと（サーバー側で既読化されるため）0 に戻る。
@@ -150,7 +179,7 @@ export function SiteHeader() {
             </Link>
           )}
 
-          <details className="relative">
+          <details ref={menuRef} className="relative">
             <summary
               aria-label="メニュー"
               className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-md border border-gray-300 dark:border-gray-700 [&::-webkit-details-marker]:hidden"
