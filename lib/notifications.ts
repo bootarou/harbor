@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { sendPushToUser } from "@/lib/push";
 import { absoluteUrl } from "@/lib/site";
 
 export type NotificationType =
@@ -131,6 +132,24 @@ export async function notify(input: NotifyInput): Promise<void> {
         currency: input.currency ?? null,
       },
     });
+    // ブラウザプッシュ（サイトを閉じていても届く）。購読が無ければ何もしない。
+    const { title, body } = notificationText({
+      type: input.type,
+      actorName: input.actorName ?? null,
+      postTitle: input.postTitle ?? null,
+      amount: input.amount ?? null,
+      currency: input.currency ?? null,
+    });
+    await sendPushToUser(input.userId, {
+      title,
+      body,
+      url: notificationUrl({
+        type: input.type,
+        postId: input.postId ?? null,
+        actorId: input.actorId ?? null,
+      }),
+      tag: input.type,
+    });
     if (u?.email && u.emailNotificationsEnabled) {
       await sendNotificationEmail(u.email, {
         type: input.type,
@@ -182,6 +201,21 @@ export async function notifyFollowersNewPost(args: {
         postTitle: args.postTitle,
       })),
     });
+    // ブラウザプッシュ（新着記事）。購読のあるフォロワーへ。
+    const { title, body } = notificationText({
+      type: "new_post",
+      actorName: args.authorName,
+      postTitle: args.postTitle,
+      amount: null,
+      currency: null,
+    });
+    const url = notificationUrl({ type: "new_post", postId: args.postId });
+    await Promise.all(
+      recipients.map((u) =>
+        sendPushToUser(u.id, { title, body, url, tag: "new_post" })
+      )
+    );
+
     // メール登録済み＆メール通知ON のフォロワーにはメールでも通知。
     for (const u of recipients) {
       if (u.email && u.emailNotificationsEnabled) {

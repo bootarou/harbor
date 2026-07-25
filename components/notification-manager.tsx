@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { subscribePush, hasActivePushSubscription } from "@/lib/push-client";
 
 type NotifItem = {
   id: string;
@@ -30,6 +31,14 @@ export function NotificationManager() {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     const register = () => {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
+      // 既に通知を許可済みの端末は、購読が失われていても自動で再購読しておく
+      // （設定画面を再訪しなくても Web Push が届き続けるようにする）。
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        void subscribePush();
+      }
     };
     if (document.readyState === "complete") {
       register();
@@ -70,6 +79,10 @@ export function NotificationManager() {
         if (typeof Notification === "undefined" || Notification.permission !== "granted")
           return;
         if (!("serviceWorker" in navigator)) return;
+
+        // Web Push が有効な端末はサーバー送信で表示されるため、ここでは出さない
+        // （フォアグラウンドでの二重通知を防ぐ）。push 未対応/未購読時のみフォールバック表示。
+        if (await hasActivePushSubscription()) return;
 
         const reg = await navigator.serviceWorker.ready;
         for (const n of fresh) {

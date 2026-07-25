@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { subscribePush } from "@/lib/push-client";
 
 type TypeDef = { key: string; label: string; default: boolean };
 type Prefs = Record<string, boolean>;
@@ -56,6 +57,8 @@ export function NotificationSettings() {
       setPermission(p);
       if (p === "granted" && "serviceWorker" in navigator) {
         await navigator.serviceWorker.register("/sw.js").catch(() => {});
+        // Web Push を購読してサーバーに保存（サイトを閉じていても届くようにする）。
+        await subscribePush();
       }
     } catch {
       /* ignore */

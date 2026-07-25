@@ -54,6 +54,22 @@ model User {
   notifications Notification[]
   answers       Answer[]       @relation("Answers")
   pollVotes     PollVote[]
+  pushSubscriptions PushSubscription[]
+}
+
+// Web Push の購読情報（ブラウザ許可時にクライアントから保存）。
+// endpoint がブラウザ/端末ごとの宛先。p256dh/auth はペイロード暗号化用の公開鍵。
+// 秘密情報ではなく、サーバーからの送信先＋暗号化鍵のみを保持する。
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // サイト内通知。表示用にアクター名・記事タイトル等をスナップショット保存（FKに依存しない）。
