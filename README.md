@@ -34,8 +34,9 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - 記事投稿（Tiptap・画像・タグ・下書き/公開・予約投稿・CRUD、保存時に HTML サニタイズ）
 - **外部コンテンツ URL 共有投稿**（OGP 取得によるリンクカード、YouTube は oEmbed + サムネイル対応）
 - 記事一覧 / 詳細 / 検索 / タグ絞り込み / **フォロー中フィード**（`/feed`）
-- コメント、**リアクション**（👍❤️💡🔥🙏）
+- コメント（`@` で記事の参加者に**メンション**可能）、**リアクション**（👍❤️💡🔥🙏）
 - **インプレッション（ビュー）カウント**、記事の**通報**（メール通知）
+- **通知**（サイト内ベル / ブラウザプッシュ / メール、種類ごとに ON/OFF・詳細は後述）
 
 ### Symbol / 送金まわり（すべて P2P・ノンカストディアル）
 - ノンカストディアル・ウォレット（作成・バックアップ・暗号化保存・復元）
@@ -129,7 +130,8 @@ npm run dev   # http://localhost:3000
 - `NEXT_PUBLIC_SYMBOL_NETWORK` — `testnet`（既定）/ `mainnet`
 - `NEXT_PUBLIC_SYMBOL_NODE_URL` — Symbol ノードの REST URL。**カンマ区切りで複数指定**すると先頭から順にフェイルオーバー
 - `CRON_SECRET` — 着金ポーリング cron の Bearer シークレット
-- `REPORT_NOTIFY_EMAIL` / `SMTP_*` — 通報通知メール（SMTP 未設定時は実送信せずサーバーログに出力）
+- `REPORT_NOTIFY_EMAIL` / `SMTP_*` — 通報・各種通知メール（SMTP 未設定時は実送信せずサーバーログに出力）
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — ブラウザプッシュ通知（Web Push / VAPID）。未設定ならプッシュのみ無効（[通知](#通知)参照）
 - `S3_*` / `NEXT_PUBLIC_S3_PUBLIC_URL` — 画像ストレージ（未設定ならローカル保存）
 
 ## Symbol ネットワーク
@@ -150,6 +152,56 @@ npm run dev   # http://localhost:3000
 > 有料記事の購入（`nagexym:buy:<postId>`）・Thanks（`nagexym:thanks:<reactionId>`）も、サーバーが
 > ノードでオンチェーン TX を検証してから記録します（クライアント申告だけでは解除・記録されません）。
 
+## 通知
+
+投げ銭・コメント・メンション・リアクション・購入・新着（フォロー中著者）・フォローなどを通知します。
+外部プッシュ通知 SaaS（Firebase / OneSignal / Pusher 等）は使わず、**標準の Web Push（VAPID）** と
+サイト内通知・メールで実現しています。
+
+### 配信チャネル（3種）
+
+| チャネル | いつ届く | 条件 |
+|---|---|---|
+| **サイト内**（ヘッダーのベル / 未読バッジ・`/notifications`） | ログインして開いている間（バッジは45秒ごと＋タブ復帰時に更新） | ログイン |
+| **ブラウザプッシュ（Web Push）** | **サイトを閉じていても** OS の通知として届く | 通知許可 ＋ VAPID 設定済み ＋ HTTPS/localhost |
+| **メール** | 種別に応じて随時 | メール登録済み＆メール通知 ON ＆ SMTP 設定済み |
+
+- 種類ごとの ON/OFF は `/notifications` の設定 UI（`User.notificationPrefs`）で変更できます。
+  OFF の種類はどのチャネルにも届きません。
+- 通知の作成・メール・プッシュ送信は Next.js の `after()` でレスポンス後に実行するため、
+  コメント投稿などの操作をブロックしません。
+
+### ブラウザプッシュ（Web Push / VAPID）のしくみ
+
+1. ユーザーが通知を許可すると、ブラウザが購読情報（`PushSubscription` = endpoint ＋公開鍵）を発行し、
+   `POST /api/push/subscribe` でサーバーに保存します（`PushSubscription` テーブル）。
+2. 通知発生時、サーバーが `web-push` で VAPID 署名＋ペイロード暗号化（aes128gcm）を行い、
+   各ブラウザベンダの push サービス（Chrome=FCM / Firefox=Mozilla / Safari=Apple）へ送信します。
+3. Service Worker（`public/sw.js`）の `push` イベントが通知を表示、クリックで該当ページを開きます。
+4. 失効した購読（404/410）はサーバー側で自動削除されます。
+
+> **秘密鍵・第三者 SaaS は不要**です。宛先はブラウザベンダの push エンドポイントのみで、
+> サーバーが保持するのは endpoint と暗号化用の公開鍵だけです。
+
+### VAPID のセットアップ
+
+```bash
+# 鍵ペアを生成
+node -e "console.log(require('web-push').generateVAPIDKeys())"
+```
+
+生成した鍵を環境変数に設定します（`.env` / `.env.example` 参照）。
+
+| 変数 | 内容 |
+|---|---|
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | 公開鍵。クライアントの購読に使う。**ビルド時に焼き込まれる**ため、Docker では `--build` が必要 |
+| `VAPID_PRIVATE_KEY` | 秘密鍵。サーバー側の送信に使う（**非公開**） |
+| `VAPID_SUBJECT` | 運営者の連絡先（`mailto:` または `https:`）。push サービス運営者向けで、一般ユーザーには公開されない |
+
+> - **鍵は一度決めたら変更しない**でください（変更すると既存の全購読が無効になります）。
+> - 未設定でもアプリは動作します（プッシュのみ無効化され、サイト内通知・メールは機能します）。
+> - iOS Safari は**ホーム画面に追加した PWA** でのみ Web Push に対応します（ブラウザ側の仕様制約）。
+
 ## デプロイ（Vercel 例）
 
 1. リポジトリを Vercel にインポート。
@@ -163,6 +215,8 @@ npm run dev   # http://localhost:3000
 5. 画像を永続化するため、本番では S3 互換ストレージ（`S3_*`）を設定してください
    （ローカルフォールバックはサーバーレス環境では永続化されません）。
 6. 通報通知メールを使う場合は `REPORT_NOTIFY_EMAIL` と `SMTP_*` を設定してください。
+7. ブラウザプッシュ通知を使う場合は VAPID の 3 変数を設定してください（[通知](#通知)参照）。
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` はビルド時に焼き込まれるため、設定後は再ビルド（Docker は `--build`）が必要です。
 
 ## セキュリティ
 
