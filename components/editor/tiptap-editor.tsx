@@ -4,12 +4,72 @@ import { useCallback, useRef, useState } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
+import type { EditorView } from "@tiptap/pm/view";
 import { LinkCard } from "@/components/editor/link-card-node";
 
 type Props = {
   initialHTML?: string;
   onChange: (html: string) => void;
 };
+
+// 画像ファイルを /api/upload へ送り、保存先 URL を返す（アップロードUI/ペースト共通）。
+async function uploadImageFile(file: File): Promise<string> {
+  const body = new FormData();
+  // 画面キャプチャ等は名前が空のことがあるためフォールバック名を付ける。
+  body.append("file", file, file.name || "pasted-image.png");
+  body.append("prefix", "posts");
+  const res = await fetch("/api/upload", { method: "POST", body });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    throw new Error(data?.error ?? "画像のアップロードに失敗しました");
+  }
+  const { url } = (await res.json()) as { url: string };
+  return url;
+}
+
+// クリップボード/ドロップの DataTransfer から画像ファイルだけを取り出す。
+function imageFilesFromDataTransfer(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  const files: File[] = [];
+  for (const item of dt.items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  // items が使えない環境では files リストにフォールバック。
+  if (files.length === 0 && dt.files) {
+    for (const f of Array.from(dt.files)) {
+      if (f.type.startsWith("image/")) files.push(f);
+    }
+  }
+  return files;
+}
+
+// 画像をアップロードし、指定位置（未指定なら現在のカーソル位置）に順次挿入する。
+async function insertUploadedImages(
+  view: EditorView,
+  files: File[],
+  at?: number
+) {
+  for (const file of files) {
+    try {
+      const url = await uploadImageFile(file);
+      const { schema } = view.state;
+      const node = schema.nodes.image.create({ src: url });
+      // 非同期後の最新 state を基準に挿入位置を決める。
+      const pos = at ?? view.state.selection.from;
+      const tr = view.state.tr.insert(pos, node);
+      view.dispatch(tr);
+    } catch (e) {
+      window.alert(
+        e instanceof Error ? e.message : "画像のアップロードに失敗しました"
+      );
+    }
+  }
+}
 
 function ToolbarButton({
   active,
@@ -115,19 +175,14 @@ function Toolbar({ editor }: { editor: Editor }) {
       e.target.value = "";
       if (!file) return;
 
-      const body = new FormData();
-      body.append("file", file);
-      body.append("prefix", "posts");
-      const res = await fetch("/api/upload", { method: "POST", body });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        window.alert(data?.error ?? "画像のアップロードに失敗しました");
-        return;
+      try {
+        const url = await uploadImageFile(file);
+        editor.chain().focus().setImage({ src: url }).run();
+      } catch (err) {
+        window.alert(
+          err instanceof Error ? err.message : "画像のアップロードに失敗しました"
+        );
       }
-      const { url } = (await res.json()) as { url: string };
-      editor.chain().focus().setImage({ src: url }).run();
     },
     [editor]
   );
@@ -284,6 +339,27 @@ export function TiptapEditor({ initialHTML, onChange }: Props) {
       attributes: {
         class:
           "prose prose-sm dark:prose-invert max-w-none min-h-[280px] px-4 py-3 focus:outline-none",
+      },
+      // 画像のコピペ（スクリーンショット等）を検知したらアップロードして挿入。
+      // 画像以外のペーストは既定処理に任せる（false を返す）。
+      handlePaste: (view, event) => {
+        const files = imageFilesFromDataTransfer(event.clipboardData);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void insertUploadedImages(view, files);
+        return true;
+      },
+      // 画像ファイルのドラッグ&ドロップにも対応（ドロップ位置に挿入）。
+      handleDrop: (view, event) => {
+        const files = imageFilesFromDataTransfer(event.dataTransfer);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        })?.pos;
+        void insertUploadedImages(view, files, pos);
+        return true;
       },
     },
     onUpdate: ({ editor }) => {

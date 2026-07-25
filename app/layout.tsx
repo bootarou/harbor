@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { ComposeFab } from "@/components/compose-fab";
 import { siteBaseUrl } from "@/lib/site";
 
 // フォントはシステムフォント（globals.css で定義）を使用。
@@ -41,6 +42,7 @@ export default function RootLayout({
           <SiteHeader />
           <div className="flex-1">{children}</div>
           <SiteFooter />
+          <ComposeFab />
         </Providers>
       </body>
     </html>
