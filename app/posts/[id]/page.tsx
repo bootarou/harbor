@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import type { Metadata } from "next";
 import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
+import { CommentBody } from "@/components/comment-body";
 import { TipBox } from "@/components/tip/tip-box";
 import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
 import { statusMeta, nextStatusHint } from "@/lib/thanks-status";
@@ -157,6 +158,7 @@ export default async function PostDetailPage({
           body: true,
           createdAt: true,
           userId: true,
+          mentions: true,
           user: { select: { displayName: true, avatarUrl: true } },
         },
       },
@@ -215,6 +217,24 @@ export default async function PostDetailPage({
   const firstTipId = firstTipperRows[0]?.id ?? null;
 
   const isAuthor = currentUserId === post.authorId;
+
+  // メンション候補＝スレッド参加者（記事著者＋コメント投稿者）。自分自身は除外。
+  // id → 表示名 のマップはコメント本文のメンション表示（ハイライト）にも使う。
+  const participantMap = new Map<string, { displayName: string; avatarUrl: string | null }>();
+  participantMap.set(post.authorId, {
+    displayName: post.author.displayName,
+    avatarUrl: post.author.avatarUrl,
+  });
+  for (const c of post.comments) {
+    participantMap.set(c.userId, {
+      displayName: c.user.displayName,
+      avatarUrl: c.user.avatarUrl,
+    });
+  }
+  const mentionCandidates = [...participantMap.entries()]
+    .filter(([id]) => id !== currentUserId)
+    .map(([id, u]) => ({ id, displayName: u.displayName, avatarUrl: u.avatarUrl }));
+
   // 非公開記事は著者本人のみ閲覧可。
   if (!post.published && !isAuthor) {
     notFound();
@@ -889,9 +909,15 @@ export default async function PostDetailPage({
                     </form>
                   )}
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm">
-                  {comment.body}
-                </p>
+                <CommentBody
+                  body={comment.body}
+                  mentions={comment.mentions
+                    .map((id) => {
+                      const u = participantMap.get(id);
+                      return u ? { id, displayName: u.displayName } : null;
+                    })
+                    .filter((m): m is { id: string; displayName: string } => m !== null)}
+                />
               </li>
             );
           })}
@@ -903,7 +929,7 @@ export default async function PostDetailPage({
         </ul>
 
         {currentUserId ? (
-          <CommentForm postId={post.id} />
+          <CommentForm postId={post.id} candidates={mentionCandidates} />
         ) : (
           <p className="text-sm text-gray-500 dark:text-gray-400">
             コメントするには{" "}

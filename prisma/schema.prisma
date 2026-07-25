@@ -283,6 +283,8 @@ model Comment {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   body      String   @db.Text
+  // メンション先ユーザーの userId 配列（そのスレッド参加者のみ・サーバーで検証）。
+  mentions  String[] @default([])
   createdAt DateTime @default(now())
 
   @@index([postId])

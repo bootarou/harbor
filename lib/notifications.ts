@@ -7,6 +7,7 @@ import { absoluteUrl } from "@/lib/site";
 export type NotificationType =
   | "tip_received"
   | "comment"
+  | "mention"
   | "reaction"
   | "purchase"
   | "new_post"
@@ -22,6 +23,7 @@ export const NOTIFICATION_TYPES: {
 }[] = [
   { key: "tip_received", label: "投げ銭を受け取った", default: true },
   { key: "comment", label: "コメントがついた", default: true },
+  { key: "mention", label: "コメントでメンションされた", default: true },
   { key: "reaction", label: "いいねされた", default: false },
   { key: "purchase", label: "記事が売れた", default: true },
   { key: "new_post", label: "フォロー中の著者が新記事を投稿", default: false },
@@ -229,6 +231,11 @@ export function notificationText(n: {
       return { title: "投げ銭が届きました 🎉", body: `${amt} の投げ銭（${post}）` };
     case "comment":
       return { title: "新しいコメント", body: `${who} さんが「${post}」にコメントしました` };
+    case "mention":
+      return {
+        title: "メンションされました 💬",
+        body: `${who} さんが「${post}」のコメントであなたにメンションしました`,
+      };
     case "reaction":
       return { title: "リアクション", body: `${who} さんが「${post}」にいいねしました` };
     case "purchase":
