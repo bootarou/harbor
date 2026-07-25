@@ -61,19 +61,31 @@ export function SiteHeader() {
     menuRef.current?.removeAttribute("open");
   }, [pathname]);
 
-  // 未読通知数を取得。ログイン中は画面遷移ごとに再取得し、
-  // /notifications を開くと（サーバー側で既読化されるため）0 に戻る。
+  // 未読通知数を取得。画面遷移ごとに加えて 45秒間隔でポーリングし、
+  // タブ復帰時にも即更新するため、遷移しなくても新着（メンション/コメント等）が
+  // バッジに反映される。/notifications を開くと（サーバー側で既読化）0 に戻る。
   useEffect(() => {
     if (!userId) return;
     let active = true;
-    fetch("/api/notifications/unread-count")
-      .then((r) => (r.ok ? r.json() : { count: 0 }))
-      .then((d: { count?: number }) => {
-        if (active) setUnread(typeof d.count === "number" ? d.count : 0);
-      })
-      .catch(() => {});
+    const fetchUnread = () => {
+      fetch("/api/notifications/unread-count")
+        .then((r) => (r.ok ? r.json() : { count: 0 }))
+        .then((d: { count?: number }) => {
+          if (active) setUnread(typeof d.count === "number" ? d.count : 0);
+        })
+        .catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 45_000);
+    // タブがバックグラウンドの間は無駄打ちせず、可視に戻ったときだけ即更新する。
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchUnread();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [userId, pathname]);
 
