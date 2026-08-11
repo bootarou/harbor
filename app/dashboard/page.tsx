@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { deletePost, togglePublish } from "@/app/posts/actions";
+import { togglePublish } from "@/app/posts/actions";
+import { DeletePostButton } from "@/components/delete-post-button";
 
 export const metadata = {
   title: "マイ記事",
@@ -122,15 +123,7 @@ export default async function DashboardPage() {
                     {post.published ? "下書きに戻す" : "公開する"}
                   </button>
                 </form>
-                <form action={deletePost}>
-                  <input type="hidden" name="postId" value={post.id} />
-                  <button
-                    type="submit"
-                    className="rounded-md border border-red-300 px-3 py-1.5 text-red-700 transition hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
-                  >
-                    削除
-                  </button>
-                </form>
+                <DeletePostButton postId={post.id} title={post.title} />
               </div>
             </li>
           ))}
