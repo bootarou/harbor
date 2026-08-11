@@ -93,6 +93,7 @@ export function SiteHeader() {
     ? [
         { href: "/feed", label: "フォロー中" },
         { href: "/bookmarks", label: "ブックマーク" },
+        { href: "/stamps", label: "スタンプ" },
         { href: "/notifications", label: "通知" },
         { href: "/dashboard", label: "マイ記事" },
         { href: "/wallet", label: "ウォレット" },

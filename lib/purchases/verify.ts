@@ -152,3 +152,23 @@ export async function checkPurchaseTx(args: {
     return { status: "ok", buyerAddress: r.senderAddress, amount: r.amount, confirmed: r.confirmed };
   return r;
 }
+
+/** スタンプ購入TXを検証して状態を返す（マーカー nagexym:stamp:<stampId>）。 */
+export async function checkStampPurchaseTx(args: {
+  txHash: string;
+  stampId: string;
+  sellerAddress: string;
+  priceAmount: number;
+  retries?: number;
+}): Promise<PurchaseCheck> {
+  const r = await checkTransferByHash({
+    txHash: args.txHash,
+    requiredMarker: `nagexym:stamp:${args.stampId}`,
+    recipientAddress: args.sellerAddress,
+    minAmountXym: args.priceAmount,
+    retries: args.retries,
+  });
+  if (r.status === "ok")
+    return { status: "ok", buyerAddress: r.senderAddress, amount: r.amount, confirmed: r.confirmed };
+  return r;
+}

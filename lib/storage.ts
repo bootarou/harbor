@@ -156,3 +156,94 @@ export async function saveImage(file: File, prefix: string): Promise<string> {
   await writeFile(path.join(uploadsDir, fileName), bytes);
   return `/uploads/${key}`;
 }
+
+// バイト列を保存して公開 URL を返す（S3 か ローカルフォールバック）。
+async function putBytes(
+  bytes: Buffer,
+  format: ImageFormat,
+  contentType: string,
+  prefix: string
+): Promise<string> {
+  const safePrefix = prefix.replace(/[^a-z0-9_-]/gi, "");
+  const key = `${safePrefix}/${randomUUID()}.${format}`;
+  if (isS3Configured()) {
+    await getS3Client().send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        Body: bytes,
+        ContentType: contentType,
+      })
+    );
+    const base = (process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "").replace(/\/$/, "");
+    return `${base}/${key}`;
+  }
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", safePrefix);
+  await mkdir(uploadsDir, { recursive: true });
+  await writeFile(path.join(uploadsDir, key.split("/").pop() as string), bytes);
+  return `/uploads/${key}`;
+}
+
+// スタンプ画像の入力上限（5MB）。保存時に長辺 500px へ縮小・圧縮するため入力は緩めに受け付ける。
+export const MAX_STAMP_BYTES = 5 * 1024 * 1024;
+const STAMP_ALLOWED_MIME = new Map<string, ImageFormat>([
+  ["image/png", "png"],
+  ["image/gif", "gif"],
+  ["image/webp", "webp"],
+]);
+// スタンプ表示用の最大辺（縦横の大きいほうをこの値以内に収める）。
+const STAMP_MAX_DIMENSION = 500;
+
+/**
+ * スタンプ画像を検証・保存する。
+ * - PNG/GIF/WebP のみ・5MB 以下。
+ * - 長辺（縦横の大きいほう）を最大 500px に縮小（拡大はしない）し、形式ごとに再エンコードして圧縮。
+ * - GIF/WebP はアニメーションを保持したままリサイズする。
+ * - 縦横比は保持（トリミングしない）。正方形は強制しない。
+ */
+export async function saveStampImage(file: File): Promise<string> {
+  const format = STAMP_ALLOWED_MIME.get(file.type);
+  if (!format) {
+    throw new ImageValidationError(
+      "スタンプは PNG / GIF / WebP のみ対応しています"
+    );
+  }
+  if (file.size === 0) throw new ImageValidationError("空のファイルです");
+  if (file.size > MAX_STAMP_BYTES) {
+    throw new ImageValidationError("スタンプ画像は5MB以下にしてください");
+  }
+
+  const input = Buffer.from(await file.arrayBuffer());
+
+  // 長辺 500px 以内へ縮小（拡大しない・縦横比保持）し、形式ごとに再エンコード圧縮。
+  // GIF/WebP はアニメーションを壊さないよう全フレームを読み込む。
+  const animated = format === "gif" || format === "webp";
+  let bytes: Buffer;
+  try {
+    const pipeline = sharp(input, { animated }).resize({
+      width: STAMP_MAX_DIMENSION,
+      height: STAMP_MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+    switch (format) {
+      case "png":
+        bytes = await pipeline.png({ compressionLevel: 9 }).toBuffer();
+        break;
+      case "webp":
+        bytes = await pipeline.webp({ quality: 82 }).toBuffer();
+        break;
+      case "gif":
+        bytes = await pipeline.gif().toBuffer();
+        break;
+      default:
+        throw new ImageValidationError("対応していない画像形式です");
+    }
+  } catch {
+    throw new ImageValidationError(
+      "画像を処理できませんでした（破損または非対応の画像の可能性があります）"
+    );
+  }
+
+  return putBytes(bytes, format, MIME_BY_FORMAT[format], "stamps");
+}

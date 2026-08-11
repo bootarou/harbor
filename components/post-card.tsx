@@ -26,6 +26,7 @@ export type PostCardData = {
   thanksCount?: number;
   thanksStatus?: string;
   isArchived?: boolean;
+  stampCount?: number;
 };
 
 function formatDate(d: Date | string): string {
@@ -138,6 +139,7 @@ export function PostCard({
             <p className="mt-1 text-[11px] text-gray-400">
               {formatDate(post.createdAt)}・👁 {post.viewCount ?? 0}
               {thanksCount > 0 && <>・🎁 Thanks × {thanksCount}</>}
+              {(post.stampCount ?? 0) > 0 && <>・🎨 × {post.stampCount}</>}
             </p>
             {(showStatusBadge || post.tags.length > 0) && (
               <p className="mt-1 flex flex-wrap items-center gap-1">

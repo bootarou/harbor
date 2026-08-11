@@ -125,6 +125,37 @@ export const purchaseSchema = z.object({
 
 export type PurchaseInput = z.infer<typeof purchaseSchema>;
 
+// スタンプの作成・編集。imageUrl はアップロードAPIで検証済みの URL。
+export const stampSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "スタンプ名を入力してください")
+    .max(80, "スタンプ名は80文字以内にしてください"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "説明は500文字以内にしてください")
+    .optional()
+    .or(z.literal("")),
+  imageUrl: imageUrl.refine((v) => v !== "", { message: "画像をアップロードしてください" }),
+  price: z
+    .number()
+    .positive("価格は0より大きい値にしてください")
+    .max(1_000_000, "価格が大きすぎます"),
+  published: z.boolean().default(false),
+});
+
+export type StampInput = z.infer<typeof stampSchema>;
+
+// スタンプ購入記録の検証入力（stampId と txHash のみ。検証はサーバーがノードで行う）。
+export const stampPurchaseSchema = z.object({
+  stampId: z.string().min(1),
+  txHash: z.string().regex(/^[0-9A-Fa-f]{64}$/, "txHash の形式が正しくありません"),
+});
+
+export type StampPurchaseInput = z.infer<typeof stampPurchaseSchema>;
+
 // Thanks 送信記録の検証入力（検証はサーバーがノードで行う）。
 export const thanksApiSchema = z.object({
   reactionId: z.string().min(1),

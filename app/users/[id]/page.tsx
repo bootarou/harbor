@@ -5,10 +5,12 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
+import { getUserPublishedStamps, getOwnedStampIds } from "@/lib/stamps";
 import { absoluteUrl } from "@/lib/site";
 import { REACTION_TYPES } from "@/lib/thanks";
 import { statusMeta } from "@/lib/thanks-status";
 import { CoverImage } from "@/components/cover-image";
+import { StampCard } from "@/components/stamp/stamp-card";
 import { FollowButton } from "@/components/follow-button";
 import { ShareButtons } from "@/components/share-buttons";
 
@@ -117,6 +119,13 @@ export default async function UserProfilePage({
           select: { id: true },
         })) !== null
       : false;
+
+  const viewerId = session?.user?.id ?? null;
+  // このユーザーが公開しているスタンプと、閲覧者が既に所持しているスタンプ。
+  const [userStamps, ownedStampIds] = await Promise.all([
+    getUserPublishedStamps(user.id),
+    getOwnedStampIds(viewerId),
+  ]);
 
   // 統計サマリーの集計（すべてサーバー側で Prisma 集計）。
   const [
@@ -478,6 +487,33 @@ export default async function UserProfilePage({
               </p>
             </details>
           )}
+        </section>
+      )}
+
+      {userStamps.length > 0 && (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">
+              🎨 このユーザーのスタンプ（{userStamps.length}）
+            </h2>
+            <Link
+              href={`/stamps?author=${user.id}`}
+              className="text-xs text-gray-500 underline dark:text-gray-400"
+            >
+              ショップで見る
+            </Link>
+          </div>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+            {userStamps.map((s) => (
+              <StampCard
+                key={s.id}
+                stamp={s}
+                currentUserId={viewerId}
+                owned={ownedStampIds.has(s.id)}
+                imgSize={80}
+              />
+            ))}
+          </div>
         </section>
       )}
 

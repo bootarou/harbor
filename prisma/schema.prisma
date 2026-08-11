@@ -55,6 +55,9 @@ model User {
   answers       Answer[]       @relation("Answers")
   pollVotes     PollVote[]
   pushSubscriptions PushSubscription[]
+  stamps          Stamp[]          @relation("StampAuthor")
+  stampPurchases  StampPurchase[]  @relation("StampBuyer")
+  stampPlacements StampPlacement[] @relation("StampPlacer")
 }
 
 // Web Push の購読情報（ブラウザ許可時にクライアントから保存）。
@@ -214,6 +217,7 @@ model Post {
   answers   Answer[]
   pollOptions PollOption[]
   pollVotes   PollVote[]
+  stampPlacements StampPlacement[]
 
   @@index([authorId])
   @@index([published, createdAt])
@@ -386,4 +390,58 @@ model PollVote {
   @@unique([postId, userId])
   @@index([optionId])
   @@index([postId])
+}
+
+// スタンプ（作者が作成・販売）。購入＝使用権の取得（LINEスタンプに近い・枚数概念なし）。
+model Stamp {
+  id          String   @id @default(cuid())
+  authorId    String
+  author      User     @relation("StampAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  imageUrl    String // 500x500 の PNG/GIF/WebP（アップロードAPIで検証済み）
+  price       Decimal // XYM価格（作者が自由設定）
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchases  StampPurchase[]
+  placements StampPlacement[]
+
+  @@index([authorId])
+  @@index([published, createdAt])
+}
+
+// スタンプの購入（＝使用権）。1ユーザー1スタンプ1購入・オンチェーン検証で confirmed 化。
+model StampPurchase {
+  id          String   @id @default(cuid())
+  stampId     String
+  stamp       Stamp    @relation(fields: [stampId], references: [id], onDelete: Cascade)
+  buyerId     String
+  buyer       User     @relation("StampBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  txHash      String   @unique
+  amount      Decimal
+  confirmed   Boolean  @default(false)
+  jpyRate     Decimal?
+  purchasedAt DateTime @default(now())
+
+  @@unique([stampId, buyerId]) // 1ユーザー1購入のみ
+  @@index([buyerId])
+  @@index([stampId])
+}
+
+// 記事へのスタンプ貼り付け（送金なし・即時）。同じスタンプを何度でも貼れる（uniqueなし）。
+model StampPlacement {
+  id        String   @id @default(cuid())
+  stampId   String
+  stamp     Stamp    @relation(fields: [stampId], references: [id], onDelete: Cascade)
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("StampPlacer", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([stampId])
+  @@index([userId])
 }

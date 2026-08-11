@@ -43,6 +43,11 @@ export function buildAnswerTipMessage(answerId: string): string {
   return `nagexym:atip:${answerId}`;
 }
 
+// スタンプ購入用マーカー。
+export function buildStampMessage(stampId: string): string {
+  return `nagexym:stamp:${stampId}`;
+}
+
 let cachedParams: NetworkParams | null = null;
 
 export async function fetchNetworkParams(): Promise<NetworkParams> {
@@ -217,6 +222,27 @@ export async function sendPurchase(args: {
     recipientAddress: args.recipientAddress,
     amountXym: args.amountXym,
     message: buildBuyMessage(args.postId),
+    params,
+  });
+  await announceTransaction(signed.payload);
+  return signed;
+}
+
+/**
+ * スタンプ購入送金: スタンプ作者のアドレスへ価格分を送り、スタンプ購入マーカーを付与する。
+ */
+export async function sendStampPurchase(args: {
+  privateKey: string;
+  recipientAddress: string;
+  amountXym: number;
+  stampId: string;
+}): Promise<SignedTip> {
+  const params = await fetchNetworkParams();
+  const signed = buildSignedTip({
+    privateKey: args.privateKey,
+    recipientAddress: args.recipientAddress,
+    amountXym: args.amountXym,
+    message: buildStampMessage(args.stampId),
     params,
   });
   await announceTransaction(signed.payload);

@@ -14,6 +14,8 @@ import { PollBox } from "@/components/poll/poll-box";
 import { selectBestAnswer } from "@/app/answers/actions";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
+import { StampSection } from "@/components/stamp/stamp-section";
+import { getPlaceableStamps, getPostStampPlacements } from "@/lib/stamps";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { ShareButtons } from "@/components/share-buttons";
 import { ViewTracker } from "@/components/view-tracker";
@@ -292,6 +294,12 @@ export default async function PostDetailPage({
   const reactionCounts: Record<string, number> = {};
   for (const g of reactionGroups) reactionCounts[g.type] = g._count;
   const myReactionKeys = myReactions.map((r) => r.type);
+
+  // スタンプ: 貼られたスタンプ集計と、閲覧者が貼れるスタンプ（購入済み＋自作）。
+  const [stampPlacements, placeableStamps] = await Promise.all([
+    getPostStampPlacements(post.id),
+    getPlaceableStamps(currentUserId),
+  ]);
 
   // ログインユーザーのブックマーク状態
   const isBookmarked = currentUserId
@@ -783,6 +791,13 @@ export default async function PostDetailPage({
               postId={post.id}
               counts={reactionCounts}
               mine={myReactionKeys}
+              isLoggedIn={currentUserId !== null}
+            />
+            {/* スタンプ: 貼り付けボタン＋貼られたスタンプ表示（貼付は楽観的に即時反映） */}
+            <StampSection
+              postId={post.id}
+              initialPlacements={stampPlacements}
+              placeable={placeableStamps}
               isLoggedIn={currentUserId !== null}
             />
           </div>

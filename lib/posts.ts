@@ -83,6 +83,7 @@ export type FeedPost = {
   thanksCount: number;
   thanksStatus: string;
   isArchived: boolean;
+  stampCount?: number;
 };
 
 // 一覧の1ページ分を取得する（投げ銭集計込み）。
@@ -122,6 +123,7 @@ export async function getPostsPage(opts: {
       thanksCount: true,
       thanksStatus: true,
       isArchived: true,
+      _count: { select: { stampPlacements: true } },
       author: { select: { displayName: true, avatarUrl: true } },
       // 記事への投げ銭のみ集計（回答への投げ銭 answerId!=null は除外）。
       // Tipper アイコン（先着順）にも使うため confirmedAt 昇順で取得し、
@@ -174,6 +176,7 @@ export async function getPostsPage(opts: {
     thanksCount: r.thanksCount,
     thanksStatus: r.thanksStatus,
     isArchived: r.isArchived,
+    stampCount: r._count.stampPlacements,
     };
   });
   return { posts, hasMore };
