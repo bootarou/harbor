@@ -101,6 +101,8 @@ services:
             echo "[cron] CRON_SECRET 未設定のためスキップ";
             continue;
           fi
+          # コミュニティの自動アーカイブ（冪等・30日無投稿を対象）。頻度は poll と共用で十分。
+          wget -q -O /dev/null --header="Authorization: Bearer $$CRON_SECRET" "$$APP_URL/api/cron/archive-topics" || true;
           if wget -q -O /dev/null --header="Authorization: Bearer $$CRON_SECRET" "$$APP_URL/api/cron/poll-tips"; then
             echo "[cron] poll ok ($$(date -u +%FT%TZ))";
           else

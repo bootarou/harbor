@@ -16,7 +16,10 @@ export function ComposeFab() {
   const onEditor =
     pathname === "/posts/new" ||
     (pathname?.startsWith("/posts/") && pathname.endsWith("/edit"));
-  if (onEditor) return null;
+  // コミュニティの詳細ページ（トピック/作成/編集）は下部にチャット入力欄があるため非表示。
+  const onCommunityDetail =
+    pathname?.startsWith("/community/") ?? false;
+  if (onEditor || onCommunityDetail) return null;
 
   return (
     <Link

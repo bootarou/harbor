@@ -58,6 +58,8 @@ model User {
   stamps          Stamp[]          @relation("StampAuthor")
   stampPurchases  StampPurchase[]  @relation("StampBuyer")
   stampPlacements StampPlacement[] @relation("StampPlacer")
+  communityTopics   CommunityTopic[]   @relation("CommunityTopicAuthor")
+  communityMessages CommunityMessage[] @relation("CommunityMessageAuthor")
 }
 
 // Web Push の購読情報（ブラウザ許可時にクライアントから保存）。
@@ -407,6 +409,7 @@ model Stamp {
 
   purchases  StampPurchase[]
   placements StampPlacement[]
+  communityMessages CommunityMessage[]
 
   @@index([authorId])
   @@index([published, createdAt])
@@ -443,5 +446,40 @@ model StampPlacement {
 
   @@index([postId])
   @@index([stampId])
+  @@index([userId])
+}
+
+// コミュニティチャットのトピック（「港の広場」）。誰でも作成可・最終投稿で自動アーカイブ。
+model CommunityTopic {
+  id           String    @id @default(cuid())
+  authorId     String
+  author       User      @relation("CommunityTopicAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  iconUrl      String?
+  archived     Boolean   @default(false)
+  lastPostedAt DateTime? // 最終投稿日時（自動アーカイブ判定・一覧の並び順に使用）
+  createdAt    DateTime  @default(now())
+
+  messages CommunityMessage[]
+
+  @@index([archived, lastPostedAt])
+  @@index([authorId])
+}
+
+// コミュニティチャットのメッセージ。最新100件のみ表示・超過分は物理削除（hidden除く）。
+model CommunityMessage {
+  id        String         @id @default(cuid())
+  topicId   String
+  topic     CommunityTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation("CommunityMessageAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  body      String         @db.Text
+  stampId   String? // 添付スタンプ（任意）
+  stamp     Stamp?         @relation(fields: [stampId], references: [id], onDelete: SetNull)
+  hidden    Boolean        @default(false) // 通報による非表示（DBには残す・物理削除の対象外）
+  createdAt DateTime       @default(now())
+
+  @@index([topicId, createdAt])
   @@index([userId])
 }

@@ -156,6 +156,42 @@ export const stampPurchaseSchema = z.object({
 
 export type StampPurchaseInput = z.infer<typeof stampPurchaseSchema>;
 
+// コミュニティのトピック作成・編集。
+export const communityTopicSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "トピック名を入力してください")
+    .max(80, "トピック名は80文字以内にしてください"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "説明は500文字以内にしてください")
+    .optional()
+    .or(z.literal("")),
+  iconUrl: imageUrl.optional().or(z.literal("")),
+});
+
+export type CommunityTopicInput = z.infer<typeof communityTopicSchema>;
+
+// コミュニティのメッセージ投稿（本文は保存時に sanitizePlainText でタグ除去）。
+// スタンプ単体（本文なし）投稿を許可するため、本文かスタンプの少なくとも一方を必須にする。
+export const communityMessageSchema = z
+  .object({
+    body: z
+      .string()
+      .trim()
+      .max(2000, "メッセージは2000文字以内にしてください")
+      .optional()
+      .or(z.literal("")),
+    stampId: z.string().min(1).optional().or(z.literal("")),
+  })
+  .refine((d) => (d.body && d.body.length > 0) || (d.stampId && d.stampId.length > 0), {
+    message: "メッセージかスタンプを入力してください",
+  });
+
+export type CommunityMessageInput = z.infer<typeof communityMessageSchema>;
+
 // Thanks 送信記録の検証入力（検証はサーバーがノードで行う）。
 export const thanksApiSchema = z.object({
   reactionId: z.string().min(1),

@@ -58,6 +58,17 @@ export function sanitizePostHtml(dirty: string): string {
   return sanitizeHtmlLib(dirty, options);
 }
 
+// チャット等のプレーンテキスト用サニタイズ。全 HTML タグを除去し、
+// 改行は保持する（表示側は whitespace-pre-wrap ＋ React エスケープで安全に描画）。
+export function sanitizePlainText(dirty: string): string {
+  return sanitizeHtmlLib(dirty, {
+    allowedTags: [],
+    allowedAttributes: {},
+    // 改行を <br> に変換せずテキストのまま残す。
+    disallowedTagsMode: "discard",
+  }).trim();
+}
+
 // 一覧の抜粋用に、HTML からプレーンテキストを抽出して切り詰める。
 export function htmlToText(html: string, maxLength = 140): string {
   const text = sanitizeHtmlLib(html, { allowedTags: [], allowedAttributes: {} })
