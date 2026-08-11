@@ -78,12 +78,14 @@ export async function savePost(
     if (typeof postId === "string" && postId.length > 0) {
       const existing = await prisma.post.findUnique({
         where: { id: postId },
-        select: { authorId: true },
+        select: { authorId: true, deletedAt: true },
       });
       if (!existing) return { error: "記事が見つかりません" };
       if (existing.authorId !== userId) {
         return { error: "この記事を編集する権限がありません" };
       }
+      // 削除済みの記事は編集不可（復活させない）。
+      if (existing.deletedAt) return { error: "削除済みの記事は編集できません" };
       // 更新時は qaStatus を上書きしない（ベストアンサー選定済みの "answered" を保持するため）。
       const { qaStatus: _omit, ...updateData } = data;
       void _omit;
@@ -347,12 +349,14 @@ export async function autosaveDraft(
     if (postId.length > 0) {
       const existing = await prisma.post.findUnique({
         where: { id: postId },
-        select: { authorId: true, published: true },
+        select: { authorId: true, published: true, deletedAt: true },
       });
       if (!existing) return { ok: false, error: "記事が見つかりません" };
       if (existing.authorId !== userId) {
         return { ok: false, error: "編集権限がありません" };
       }
+      // 削除済みの記事は自動保存しない。
+      if (existing.deletedAt) return { ok: false, error: "削除済みの記事です" };
       // 公開済み記事は自動保存しない（書きかけが本番へ即反映されるのを防ぐ・防御）。
       if (existing.published) {
         return { ok: false, error: "公開中の記事は自動保存されません" };
@@ -416,13 +420,23 @@ export async function deletePost(formData: FormData): Promise<void> {
 
   const existing = await prisma.post.findUnique({
     where: { id: postId },
-    select: { authorId: true },
+    select: { authorId: true, deletedAt: true },
   });
   if (!existing || existing.authorId !== session.user.id) {
     return;
   }
+  // 既に削除済みなら何もしない（冪等）。
+  if (existing.deletedAt) {
+    revalidatePath("/dashboard");
+    return;
+  }
 
-  await prisma.post.delete({ where: { id: postId } });
+  // 物理削除ではなく論理削除。published も落として一般公開・各種操作から除外する。
+  // 購入(Purchase)・投げ銭(Tip)・収益記録は Cascade で消さず保全する（会計・購入者保護）。
+  await prisma.post.update({
+    where: { id: postId },
+    data: { deletedAt: new Date(), published: false },
+  });
   revalidatePath("/dashboard");
 }
 
@@ -440,9 +454,13 @@ export async function togglePublish(formData: FormData): Promise<void> {
 
   const existing = await prisma.post.findUnique({
     where: { id: postId },
-    select: { authorId: true, published: true },
+    select: { authorId: true, published: true, deletedAt: true },
   });
   if (!existing || existing.authorId !== session.user.id) {
+    return;
+  }
+  // 削除済みの記事は公開状態を変更できない（復活させない）。
+  if (existing.deletedAt) {
     return;
   }
 

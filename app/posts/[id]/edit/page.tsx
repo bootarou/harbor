@@ -38,6 +38,7 @@ export default async function EditPostPage({
         contentHTML: true,
         coverImage: true,
         published: true,
+        deletedAt: true,
         tags: true,
         publishAt: true,
         paid: true,
@@ -68,6 +69,10 @@ export default async function EditPostPage({
   }
   if (post.authorId !== session.user.id) {
     redirect("/dashboard");
+  }
+  // 削除済みの記事は編集不可。
+  if (post.deletedAt) {
+    notFound();
   }
 
   return (

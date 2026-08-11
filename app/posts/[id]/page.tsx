@@ -119,6 +119,7 @@ export default async function PostDetailPage({
       contentHTML: true,
       coverImage: true,
       published: true,
+      deletedAt: true,
       tags: true,
       createdAt: true,
       publishAt: true,
@@ -235,8 +236,26 @@ export default async function PostDetailPage({
     .filter(([id]) => id !== currentUserId)
     .map(([id, u]) => ({ id, displayName: u.displayName, avatarUrl: u.avatarUrl }));
 
-  // 非公開記事は著者本人のみ閲覧可。
-  if (!post.published && !isAuthor) {
+  // 有料記事の閲覧権: 著者本人、または購入済みユーザー。
+  // 削除済み記事の閲覧可否判定にも使うため、先に購入済みかを確認する。
+  let hasPurchased = false;
+  if (currentUserId && !isAuthor) {
+    const purchase = await prisma.purchase.findFirst({
+      where: { postId: post.id, buyerUserId: currentUserId },
+      select: { id: true },
+    });
+    hasPurchased = purchase !== null;
+  }
+
+  const isDeleted = post.deletedAt !== null;
+  if (isDeleted) {
+    // 論理削除済みは一般公開から除外。ただし著者本人と購入済みユーザーは引き続き閲覧できる
+    //（対価を払った購入者を保護する）。
+    if (!isAuthor && !hasPurchased) {
+      notFound();
+    }
+  } else if (!post.published && !isAuthor) {
+    // 非公開記事は著者本人のみ閲覧可。
     notFound();
   }
   // 公開日時が未来の記事は著者本人以外には非表示。
@@ -244,16 +263,6 @@ export default async function PostDetailPage({
   const nowMs = Date.now();
   if (post.publishAt && post.publishAt.getTime() > nowMs && !isAuthor) {
     notFound();
-  }
-
-  // 有料記事の閲覧権: 著者本人、または購入済みユーザー。
-  let hasPurchased = false;
-  if (post.paid && currentUserId && !isAuthor) {
-    const purchase = await prisma.purchase.findFirst({
-      where: { postId: post.id, buyerUserId: currentUserId },
-      select: { id: true },
-    });
-    hasPurchased = purchase !== null;
   }
   const canReadPaid = !post.paid || isAuthor || hasPurchased;
   // 本文中の <a data-card> をキャッシュからリンクカードHTMLへ置換（保存済み・サニタイズ済み）。
@@ -363,10 +372,18 @@ export default async function PostDetailPage({
       </nav>
 
       <article>
-        {!post.published && (
-          <p className="mb-4 inline-block rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            下書き（あなただけに表示されています）
+        {isDeleted ? (
+          <p className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            {isAuthor
+              ? "この記事は削除済みです（一般公開されていません）。購入者は引き続き閲覧できます。"
+              : "この記事は著者により削除されました。購入済みのため、あなたは引き続き閲覧できます。"}
           </p>
+        ) : (
+          !post.published && (
+            <p className="mb-4 inline-block rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              下書き（あなただけに表示されています）
+            </p>
+          )
         )}
 
         <h1 className="text-3xl font-bold">{post.title}</h1>

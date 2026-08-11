@@ -31,6 +31,7 @@ export function buildTippers(
 export function livePostWhere(): Prisma.PostWhereInput {
   return {
     published: true,
+    deletedAt: null, // 論理削除済みは一般の一覧・詳細から除外
     OR: [{ publishAt: null }, { publishAt: { lte: new Date() } }],
   };
 }

@@ -29,7 +29,7 @@ async function compute(): Promise<TipRateStats> {
     // 公開済み＆投げ銭可能な記事すべて（公開日と confirmed Tip 件数）。
     // tipsEnabled=false（URL投稿で投げ銭OFF）は構造的に投げ銭を受け取れないため母数から除外する。
     prisma.post.findMany({
-      where: { published: true, tipsEnabled: true },
+      where: { published: true, tipsEnabled: true, deletedAt: null },
       select: {
         createdAt: true,
         _count: { select: { tips: { where: { confirmed: true } } } },

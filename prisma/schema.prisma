@@ -197,6 +197,10 @@ model Post {
   priceCurrency String? // "XYM" のみ許可（当面）
   sellerAddress String? // 販売者(投稿者)の受取アドレス
 
+  // 論理削除（ソフトデリート）。null=有効 / 値あり=削除済み。
+  // 物理削除しないことで、購入・投げ銭・収益の記録（Purchase/Tip/Thanks）を保全する。
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -213,6 +217,7 @@ model Post {
 
   @@index([authorId])
   @@index([published, createdAt])
+  @@index([deletedAt])
   @@index([tags], type: Gin)
   @@index([isArchived])
   @@index([archivedAt])
