@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   postMessage,
@@ -8,6 +15,7 @@ import {
   reportMessage,
 } from "@/app/community/actions";
 import type { CommunityMessageView } from "@/lib/community";
+import type { OnlineViewer } from "@/lib/community/presence";
 import type { PlaceableStamp } from "@/lib/stamps";
 
 const POLL_MS = 45_000;
@@ -20,20 +28,55 @@ function formatTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+// 本文中の http(s) URL をクリック可能なリンクに変換する（本文はサニタイズ済みプレーンテキスト）。
+// dangerouslySetInnerHTML は使わず、テキストと <a> の React ノード配列を組み立てて安全に描画する。
+function linkify(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const regex = /(https?:\/\/[^\s]+)/g;
+  let last = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const raw = match[0];
+    // 末尾の句読点・閉じ括弧は URL に含めない（テキストとして分離）。
+    const url = raw.replace(/[)\]}>,.!?。、）」』】]+$/u, "");
+    const trailing = raw.slice(url.length);
+    nodes.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="underline underline-offset-2 break-all"
+      >
+        {url}
+      </a>
+    );
+    if (trailing) nodes.push(trailing);
+    last = match.index + raw.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
 export function ChatRoom({
   topicId,
   initialMessages,
   currentUserId,
   isTopicAuthor,
   placeableStamps,
+  initialOnline,
 }: {
   topicId: string;
   initialMessages: CommunityMessageView[];
   currentUserId: string | null;
   isTopicAuthor: boolean;
   placeableStamps: PlaceableStamp[];
+  initialOnline: OnlineViewer[];
 }) {
   const [messages, setMessages] = useState<CommunityMessageView[]>(initialMessages);
+  const [online, setOnline] = useState<OnlineViewer[]>(initialOnline);
   const [body, setBody] = useState("");
   const [stampOpen, setStampOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,20 +93,23 @@ export function ChatRoom({
     });
   }, []);
 
-  // 差分ポーリング（表示中・フォーカス時のみ）。最新 createdAt 以降を取得。
+  // 差分ポーリング（表示中・フォーカス時のみ）。新着メッセージ取得＋オンライン更新を兼ねる。
+  // メッセージが無いトピックでもプレゼンス（在室）を更新するため、after 無しでも必ず叩く。
   const poll = useCallback(async () => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
     const last = messages[messages.length - 1]?.createdAt;
-    if (!last) return;
+    const qs = last ? `?after=${encodeURIComponent(last)}` : "";
     try {
-      const res = await fetch(
-        `/api/community/${topicId}/messages?after=${encodeURIComponent(last)}`
-      );
+      const res = await fetch(`/api/community/${topicId}/messages${qs}`);
       if (!res.ok) return;
-      const data = (await res.json()) as { messages: CommunityMessageView[] };
+      const data = (await res.json()) as {
+        messages: CommunityMessageView[];
+        online: OnlineViewer[];
+      };
       appendMessages(data.messages);
+      setOnline(data.online);
     } catch {
       /* ignore */
     }
@@ -136,6 +182,40 @@ export function ChatRoom({
 
   return (
     <div className="flex min-h-[65vh] flex-col">
+      {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。 */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs dark:border-gray-800">
+        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-600 dark:text-green-400">
+          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
+          オンライン {online.length}人
+        </span>
+        {online.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {online.slice(0, 10).map((v) => (
+              <span
+                key={v.id}
+                className="flex items-center gap-1 rounded-full bg-gray-100 py-0.5 pl-0.5 pr-2 dark:bg-gray-800"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={v.avatarUrl || "/avatar-placeholder.svg"}
+                  alt=""
+                  className="h-4 w-4 rounded-full object-cover"
+                />
+                <span className="max-w-[9rem] truncate">
+                  {v.displayName ?? "（無名）"}
+                  {v.id === currentUserId ? "（あなた）" : ""}
+                </span>
+              </span>
+            ))}
+            {online.length > 10 && (
+              <span className="text-gray-400">+{online.length - 10}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-400">いま閲覧している人はいません</span>
+        )}
+      </div>
+
       {/* メッセージ一覧（下が最新）。flex-1 で伸ばし、入力欄を下部へ押し出す。 */}
       <ul className="flex flex-1 flex-col gap-4 pb-4">
         {messages.length === 0 && (
@@ -144,49 +224,64 @@ export function ChatRoom({
           </li>
         )}
         {messages.map((m) => {
-          const canDelete =
-            currentUserId != null &&
-            (m.userId === currentUserId || isTopicAuthor);
+          const mine = currentUserId != null && m.userId === currentUserId;
+          const canDelete = currentUserId != null && (mine || isTopicAuthor);
           return (
-            <li key={m.id} className="flex gap-3">
+            <li
+              key={m.id}
+              className={`flex gap-2 sm:gap-3 ${mine ? "flex-row-reverse" : ""}`}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={m.user.avatarUrl || "/avatar-placeholder.svg"}
                 alt=""
                 className="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
               />
-              <div className="min-w-0 flex-1">
+              <div
+                className={`flex min-w-0 max-w-[80%] flex-col ${
+                  mine ? "items-end" : "items-start"
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <Link
-                    href={`/users/${m.user.id}`}
-                    className="text-sm font-medium hover:underline"
-                  >
-                    {m.user.displayName ?? "（無名）"}
-                  </Link>
+                  {/* 自分のメッセージは名前を省略（自分だと分かるため） */}
+                  {!mine && (
+                    <Link
+                      href={`/users/${m.user.id}`}
+                      className="text-sm font-medium hover:underline"
+                    >
+                      {m.user.displayName ?? "（無名）"}
+                    </Link>
+                  )}
                   <span className="text-xs text-gray-400">{formatTime(m.createdAt)}</span>
-                  <span className="ml-auto flex items-center gap-2">
-                    {canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(m.id)}
-                        className="text-xs text-red-600 hover:underline dark:text-red-400"
-                      >
-                        削除
-                      </button>
-                    )}
-                    {currentUserId != null && m.userId !== currentUserId && (
-                      <button
-                        type="button"
-                        onClick={() => onReport(m.id)}
-                        className="text-xs text-gray-400 hover:underline"
-                      >
-                        通報
-                      </button>
-                    )}
-                  </span>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(m.id)}
+                      className="text-xs text-red-600 hover:underline dark:text-red-400"
+                    >
+                      削除
+                    </button>
+                  )}
+                  {currentUserId != null && !mine && (
+                    <button
+                      type="button"
+                      onClick={() => onReport(m.id)}
+                      className="text-xs text-gray-400 hover:underline"
+                    >
+                      通報
+                    </button>
+                  )}
                 </div>
                 {m.body && (
-                  <p className="whitespace-pre-wrap break-words text-sm">{m.body}</p>
+                  <p
+                    className={`mt-0.5 inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
+                      mine
+                        ? "bg-teal-500 text-white"
+                        : "bg-gray-100 dark:bg-gray-800"
+                    }`}
+                  >
+                    {linkify(m.body)}
+                  </p>
                 )}
                 {m.stamp && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -218,9 +313,9 @@ export function ChatRoom({
                 type="button"
                 onClick={() => setStampOpen((v) => !v)}
                 title="スタンプを送る"
-                className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
+                className="flex shrink-0 items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
               >
-                🎨
+                🎨 <span>スタンプ</span>
               </button>
               <textarea
                 value={body}

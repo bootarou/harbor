@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTopicMessages } from "@/lib/community";
+import { touchPresence, getActiveViewers } from "@/lib/community/presence";
 import { getPlaceableStamps } from "@/lib/stamps";
 import { ChatRoom } from "@/components/community/chat-room";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
@@ -45,10 +46,30 @@ export default async function TopicPage({
 
   const isTopicAuthor = currentUserId === topic.authorId;
 
-  const [messages, placeableStamps] = await Promise.all([
+  const [messages, placeableStamps, me] = await Promise.all([
     getTopicMessages(topicId),
     getPlaceableStamps(currentUserId),
+    currentUserId
+      ? prisma.user.findUnique({
+          where: { id: currentUserId },
+          select: { displayName: true, avatarUrl: true },
+        })
+      : Promise.resolve(null),
   ]);
+
+  // このページを開いたユーザーをオンラインとして記録し、初期のオンライン一覧を作る。
+  if (currentUserId) {
+    touchPresence(topicId, {
+      userId: currentUserId,
+      displayName: me?.displayName ?? null,
+      avatarUrl: me?.avatarUrl ?? null,
+    });
+  }
+  const initialOnline = getActiveViewers(topicId).map((v) => ({
+    id: v.userId,
+    displayName: v.displayName,
+    avatarUrl: v.avatarUrl,
+  }));
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
@@ -107,6 +128,7 @@ export default async function TopicPage({
         currentUserId={currentUserId}
         isTopicAuthor={isTopicAuthor}
         placeableStamps={placeableStamps}
+        initialOnline={initialOnline}
       />
     </main>
   );
