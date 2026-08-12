@@ -20,18 +20,21 @@ export function StampCard({
 
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-3 text-center dark:border-gray-800">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={stamp.imageUrl}
-        alt={stamp.name}
-        width={imgSize}
-        height={imgSize}
-        style={{ width: imgSize, height: imgSize }}
-        className="rounded-md bg-gray-50 object-contain dark:bg-gray-900"
-      />
-      <p className="w-full truncate text-sm font-medium" title={stamp.name}>
-        {stamp.name}
-      </p>
+      {/* 画像・名前は個別スタンプページ（共有可能・OGP付き）へ */}
+      <Link href={`/stamps/${stamp.id}`} className="w-full">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={stamp.imageUrl}
+          alt={stamp.name}
+          width={imgSize}
+          height={imgSize}
+          style={{ width: imgSize, height: imgSize }}
+          className="mx-auto rounded-md bg-gray-50 object-contain dark:bg-gray-900"
+        />
+        <p className="mt-2 w-full truncate text-sm font-medium hover:underline" title={stamp.name}>
+          {stamp.name}
+        </p>
+      </Link>
       <Link
         href={`/users/${stamp.author.id}`}
         className="w-full truncate text-xs text-gray-500 hover:underline dark:text-gray-400"

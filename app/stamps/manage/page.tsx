@@ -72,6 +72,12 @@ export default async function StampManagePage() {
               </div>
               <div className="flex shrink-0 items-center gap-2 text-sm">
                 <Link
+                  href={`/stamps/${s.id}`}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
+                >
+                  共有ページ
+                </Link>
+                <Link
                   href={`/stamps/${s.id}/edit`}
                   className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
                 >
