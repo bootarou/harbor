@@ -97,8 +97,11 @@ export async function checkTransferByHash(args: {
 
   const currencyId = await getCurrencyMosaicId();
   const mosaic = (tx.mosaics ?? []).find((m) => m.id.toUpperCase() === currencyId);
-  if (!mosaic) return { status: "invalid", reason: "通貨不一致" };
-  const amount = Number(mosaic.amount) / 1_000_000;
+  // 0 XYM（minAmount=0）の購入はメッセージのみの送金＝通貨モザイクが無いのを許容する。
+  const amount = mosaic ? Number(mosaic.amount) / 1_000_000 : 0;
+  if (!mosaic && args.minAmountXym > 0) {
+    return { status: "invalid", reason: "通貨不一致" };
+  }
   if (amount + 1e-9 < args.minAmountXym)
     return { status: "invalid", reason: "金額不足" };
 

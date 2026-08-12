@@ -138,11 +138,14 @@ export function StampForm({ initial }: { initial: StampInitial }) {
           name="price"
           required
           step="0.000001"
-          min="0.000001"
+          min="0"
           defaultValue={initial.price}
-          placeholder="例: 5"
+          placeholder="例: 5（0 も可）"
           className="w-40 rounded-md border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
         />
+        <span className="text-xs text-gray-400">
+          0 にすると無料。購入時はメッセージのみの送金（手数料のみ）で、トランザクション＝所有証明が残ります。
+        </span>
       </label>
 
       <label className="flex items-center gap-2 text-sm">

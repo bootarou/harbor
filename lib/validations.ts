@@ -139,9 +139,10 @@ export const stampSchema = z.object({
     .optional()
     .or(z.literal("")),
   imageUrl: imageUrl.refine((v) => v !== "", { message: "画像をアップロードしてください" }),
+  // 0 も許可（0 XYM の場合はメッセージのみの送金＝所有証明のトランザクションが発生する）。
   price: z
     .number()
-    .positive("価格は0より大きい値にしてください")
+    .min(0, "価格は0以上にしてください")
     .max(1_000_000, "価格が大きすぎます"),
   published: z.boolean().default(false),
 });

@@ -107,15 +107,17 @@ export function buildSignedTip(args: {
 
   const deadline = Deadline.create(params.epochAdjustment);
   const amountMicro = Math.round(args.amountXym * XYM_DIVISIBILITY);
-  const mosaic = new Mosaic(
-    new MosaicId(params.currencyMosaicId),
-    UInt64.fromUint(amountMicro)
-  );
+  // 0 XYM のときはモザイクを付けず、メッセージのみの送金にする
+  // （Symbol は数量0の送金が可能。手数料は発生し、トランザクション＝所有証明として機能する）。
+  const mosaics =
+    amountMicro > 0
+      ? [new Mosaic(new MosaicId(params.currencyMosaicId), UInt64.fromUint(amountMicro))]
+      : [];
 
   const unsigned = TransferTransaction.create(
     deadline,
     Address.createFromRawAddress(args.recipientAddress),
-    [mosaic],
+    mosaics,
     PlainMessage.create(args.message),
     networkType
   ).setMaxFee(FEE_MULTIPLIER) as TransferTransaction;
