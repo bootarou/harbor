@@ -138,7 +138,7 @@ export async function postMessage(
     if (!stamp) return { ok: false, error: "スタンプが見つかりません" };
     if (stamp.authorId !== userId) {
       const owned = await prisma.stampPurchase.findFirst({
-        where: { stampId: reqStampId, buyerId: userId, confirmed: true },
+        where: { stampId: reqStampId, buyerId: userId },
         select: { id: true },
       });
       if (!owned) return { ok: false, error: "そのスタンプの使用権がありません" };

@@ -146,7 +146,7 @@ export async function placeStamp(
   const isStampAuthor = stamp.authorId === userId;
   if (!isStampAuthor) {
     const owned = await prisma.stampPurchase.findFirst({
-      where: { stampId, buyerId: userId, confirmed: true },
+      where: { stampId, buyerId: userId },
       select: { id: true },
     });
     if (!owned) return { ok: false, error: "このスタンプの使用権がありません" };

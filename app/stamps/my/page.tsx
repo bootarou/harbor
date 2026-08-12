@@ -13,7 +13,7 @@ export default async function MyStampsPage() {
   }
 
   const purchases = await prisma.stampPurchase.findMany({
-    where: { buyerId: session.user.id, confirmed: true },
+    where: { buyerId: session.user.id },
     orderBy: { purchasedAt: "desc" },
     select: {
       id: true,

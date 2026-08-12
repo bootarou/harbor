@@ -11,11 +11,13 @@ export type StampCardData = {
   author: { id: string; displayName: string | null; xymAddress: string | null };
 };
 
-// 現在のユーザーが使用権を持つ（購入済み confirmed）スタンプ ID の集合。
+// 現在のユーザーが使用権を持つスタンプ ID の集合。
+// 購入はオンチェーン検証OKのときだけ記録されるため、未確定(confirmed=false)でも
+// 使用権あり（＝所持）として扱う（有料記事の解除と同じ方針）。
 export async function getOwnedStampIds(userId: string | null): Promise<Set<string>> {
   if (!userId) return new Set();
   const rows = await prisma.stampPurchase.findMany({
-    where: { buyerId: userId, confirmed: true },
+    where: { buyerId: userId },
     select: { stampId: true },
   });
   return new Set(rows.map((r) => r.stampId));
@@ -79,7 +81,7 @@ export async function getPlaceableStamps(
   if (!userId) return [];
   const [purchased, authored] = await Promise.all([
     prisma.stampPurchase.findMany({
-      where: { buyerId: userId, confirmed: true },
+      where: { buyerId: userId },
       select: { stamp: { select: { id: true, name: true, imageUrl: true } } },
       orderBy: { purchasedAt: "desc" },
     }),
