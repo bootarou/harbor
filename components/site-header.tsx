@@ -120,6 +120,7 @@ export function SiteHeader() {
     "/stamps",
     "/notifications",
     "/dashboard",
+    "/wallet",
   ]);
   const primaryLinks = links.filter((l) => PRIMARY_HREFS.has(l.href));
   const secondaryLinks = links.filter((l) => !PRIMARY_HREFS.has(l.href));
