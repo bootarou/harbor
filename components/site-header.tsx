@@ -29,24 +29,30 @@ export function SiteHeader() {
   const { data: session } = useSession();
   const [unread, setUnread] = useState(0);
   const pathname = usePathname();
-  // モバイルのハンバーガーメニュー（native <details>）。
-  // メニュー外タップ／Esc で閉じるために ref で開閉を制御する。
+  // モバイルのハンバーガー（menuRef）とデスクトップの「メニュー▾」ドロップダウン（deskMenuRef）。
+  // どちらも native <details>。メニュー外タップ／Esc で閉じるために ref で開閉を制御する。
   const menuRef = useRef<HTMLDetailsElement>(null);
+  const deskMenuRef = useRef<HTMLDetailsElement>(null);
 
   const userId = session?.user?.id;
 
   // メニューを開いている間、メニュー外をタップ（またはEsc）したら閉じる。
   // native <details> は外側クリックで閉じないため、明示的に制御する。
   useEffect(() => {
+    const refs = [menuRef, deskMenuRef];
     function onPointerDown(e: PointerEvent) {
-      const el = menuRef.current;
-      if (!el?.open) return;
-      if (e.target instanceof Node && !el.contains(e.target)) {
-        el.removeAttribute("open");
+      for (const ref of refs) {
+        const el = ref.current;
+        if (!el?.open) continue;
+        if (e.target instanceof Node && !el.contains(e.target)) {
+          el.removeAttribute("open");
+        }
       }
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") menuRef.current?.removeAttribute("open");
+      if (e.key === "Escape") {
+        for (const ref of refs) ref.current?.removeAttribute("open");
+      }
     }
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -59,6 +65,7 @@ export function SiteHeader() {
   // 画面遷移したらメニューを閉じる（遷移先で開いたままにしない）。
   useEffect(() => {
     menuRef.current?.removeAttribute("open");
+    deskMenuRef.current?.removeAttribute("open");
   }, [pathname]);
 
   // 未読通知数を取得。画面遷移ごとに加えて 45秒間隔でポーリングし、
@@ -106,6 +113,17 @@ export function SiteHeader() {
       ]
     : [];
 
+  // デスクトップは主要項目のみ横並びにし、残りは「メニュー▾」に格納（ヘッダーの折返し防止）。
+  // モバイルは従来どおり全項目をハンバーガーに表示する（links をそのまま使用）。
+  const PRIMARY_HREFS = new Set([
+    "/community",
+    "/stamps",
+    "/notifications",
+    "/dashboard",
+  ]);
+  const primaryLinks = links.filter((l) => PRIMARY_HREFS.has(l.href));
+  const secondaryLinks = links.filter((l) => !PRIMARY_HREFS.has(l.href));
+
   return (
     <header className="border-b border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
@@ -124,31 +142,59 @@ export function SiteHeader() {
           {SITE_NAME}
         </Link>
 
-        {/* デスクトップ: 横並びナビ */}
+        {/* デスクトップ: 横並びナビ（主要項目＋「メニュー▾」に集約） */}
         <nav className="hidden items-center gap-3 text-sm sm:flex">
           {session?.user ? (
             <>
               <Link
                 href="/posts/new"
-                className="rounded-md bg-black px-3 py-1.5 font-medium text-white dark:bg-white dark:text-black"
+                className="whitespace-nowrap rounded-md bg-black px-3 py-1.5 font-medium text-white dark:bg-white dark:text-black"
               >
                 記事を書く
               </Link>
-              {links.map((l) => (
-                <Link key={l.href} href={l.href} className="hover:underline">
+              {primaryLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="whitespace-nowrap hover:underline"
+                >
                   {l.label}
                   {l.href === "/notifications" && (
                     <NotificationBadge count={unread} />
                   )}
                 </Link>
               ))}
-              <button
-                type="button"
-                onClick={() => purgeAwareSignOut({ callbackUrl: "/" })}
-                className="hover:underline"
-              >
-                ログアウト
-              </button>
+              <details ref={deskMenuRef} className="relative">
+                <summary className="flex cursor-pointer list-none items-center gap-1 whitespace-nowrap hover:underline [&::-webkit-details-marker]:hidden">
+                  メニュー
+                  <span aria-hidden="true" className="text-xs text-gray-400">
+                    ▾
+                  </span>
+                </summary>
+                <nav className="absolute right-0 top-full z-20 mt-2 flex w-48 flex-col rounded-md border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-950">
+                  {secondaryLinks.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      onClick={closeDetails}
+                      aria-current={pathname === l.href ? "page" : undefined}
+                      className="rounded-md px-2 py-2 hover:underline"
+                    >
+                      {l.label}
+                    </Link>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      closeDetails(e);
+                      purgeAwareSignOut({ callbackUrl: "/" });
+                    }}
+                    className="rounded-md px-2 py-2 text-left hover:underline"
+                  >
+                    ログアウト
+                  </button>
+                </nav>
+              </details>
             </>
           ) : (
             <>
