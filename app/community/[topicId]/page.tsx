@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getTopicMessages } from "@/lib/community";
 import { touchPresence, getActiveViewers } from "@/lib/community/presence";
 import { getPlaceableStamps } from "@/lib/stamps";
+import { absoluteUrl } from "@/lib/site";
 import { ChatRoom } from "@/components/community/chat-room";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
 
@@ -17,9 +18,36 @@ export async function generateMetadata({
   const { topicId } = await params;
   const topic = await prisma.communityTopic.findUnique({
     where: { id: topicId },
-    select: { name: true },
+    select: { name: true, description: true, iconUrl: true },
   });
-  return { title: topic ? `${topic.name}｜コミュニティ` : "コミュニティ" };
+  if (!topic) return { title: "コミュニティ" };
+
+  const title = `${topic.name}｜港の広場`;
+  const description =
+    topic.description?.trim() ||
+    `Harbor コミュニティの「${topic.name}」。港の広場で自由に会話しましょう。`;
+  // アイコンがあれば OG 画像に、無ければサイト共通のフォールバックを使う（外部クローラー向けに絶対URL）。
+  const images = [absoluteUrl(topic.iconUrl || "/og-default.png")];
+  const url = absoluteUrl(`/community/${topicId}`);
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      type: "website",
+      images,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images,
+    },
+  };
 }
 
 export default async function TopicPage({

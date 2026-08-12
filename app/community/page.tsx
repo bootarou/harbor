@@ -2,10 +2,29 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { absoluteUrl } from "@/lib/site";
+
+const COMMUNITY_TITLE = "港の広場（コミュニティ）";
+const COMMUNITY_DESC =
+  "Harbor の港の広場。トピックを立てて自由に会話できます。";
 
 export const metadata: Metadata = {
-  title: "コミュニティ",
-  description: "Harbor の港の広場。トピックを立てて自由に会話できます。",
+  title: COMMUNITY_TITLE,
+  description: COMMUNITY_DESC,
+  alternates: { canonical: absoluteUrl("/community") },
+  openGraph: {
+    title: COMMUNITY_TITLE,
+    description: COMMUNITY_DESC,
+    url: absoluteUrl("/community"),
+    type: "website",
+    images: [absoluteUrl("/og-default.png")],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: COMMUNITY_TITLE,
+    description: COMMUNITY_DESC,
+    images: [absoluteUrl("/og-default.png")],
+  },
 };
 
 function formatWhen(d: Date | null): string {
