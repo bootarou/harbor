@@ -376,8 +376,7 @@ export default async function PostDetailPage({
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl justify-center gap-8 px-6 py-10">
-      <main className="w-full min-w-0 max-w-3xl">
+    <main className="relative mx-auto w-full max-w-3xl px-6 py-10">
       <ViewTracker postId={post.id} />
       <nav className="mb-6 text-sm">
         <Link href="/" className="text-gray-500 hover:underline dark:text-gray-400">
@@ -385,9 +384,9 @@ export default async function PostDetailPage({
         </Link>
       </nav>
 
-      {/* モバイル: 折りたたみ目次（デスクトップは右サイドに固定表示） */}
+      {/* 目次: 広い画面(xl)は本文の右外に固定表示、それ未満は折りたたみ表示 */}
       {showToc && (
-        <details className="mb-6 rounded-lg border border-gray-200 p-3 lg:hidden dark:border-gray-800">
+        <details className="mb-6 rounded-lg border border-gray-200 p-3 xl:hidden dark:border-gray-800">
           <summary className="cursor-pointer text-sm font-semibold">📑 目次</summary>
           <div className="mt-2">
             <PostTocList toc={toc} />
@@ -988,12 +987,11 @@ export default async function PostDetailPage({
           </p>
         )}
       </section>
-      </main>
 
-      {/* デスクトップ: 右サイドに追従（sticky）する目次 */}
+      {/* 広い画面(xl以上): 本文の右外に追従(sticky)表示。absolute なので本文の中央寄せに影響しない */}
       {showToc && (
-        <aside className="hidden w-56 shrink-0 lg:block">
-          <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-auto">
+        <aside className="absolute left-full top-0 hidden h-full pl-8 xl:block">
+          <div className="sticky top-6 w-56 max-h-[calc(100vh-3rem)] overflow-auto">
             <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
               📑 目次
             </p>
@@ -1001,6 +999,6 @@ export default async function PostDetailPage({
           </div>
         </aside>
       )}
-    </div>
+    </main>
   );
 }
