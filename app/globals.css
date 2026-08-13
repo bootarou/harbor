@@ -28,3 +28,8 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* 記事の見出しアンカー（目次リンク）ジャンプ時に上端で詰まらないよう余白を確保 */
+article :is(h1, h2, h3)[id] {
+  scroll-margin-top: 1.5rem;
+}

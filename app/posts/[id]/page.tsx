@@ -22,6 +22,8 @@ import { ViewTracker } from "@/components/view-tracker";
 import { deleteComment } from "@/app/comments/actions";
 import { htmlToText } from "@/lib/sanitize";
 import { renderLinkCardsHtml } from "@/lib/link-preview";
+import { buildToc } from "@/lib/toc";
+import { PostTocList } from "@/components/post-toc";
 import { formatXym } from "@/lib/format";
 import { tipStatus } from "@/lib/tips/status";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
@@ -268,10 +270,13 @@ export default async function PostDetailPage({
   }
   const canReadPaid = !post.paid || isAuthor || hasPurchased;
   // 本文中の <a data-card> をキャッシュからリンクカードHTMLへ置換（保存済み・サニタイズ済み）。
-  const [contentHtmlRendered, paidHtmlRendered] = await Promise.all([
+  const [contentHtmlRenderedRaw, paidHtmlRendered] = await Promise.all([
     renderLinkCardsHtml(post.contentHTML),
     post.paidHtml ? renderLinkCardsHtml(post.paidHtml) : Promise.resolve(""),
   ]);
+  // 本文の見出し(h1-h3)に id を付与し、目次を生成する（無料本文のみ）。
+  const { html: contentHtmlRendered, toc } = buildToc(contentHtmlRenderedRaw);
+  const showToc = toc.length >= 2;
   const isUrl = post.postType === "external_url";
   const tipAllowed = !isUrl || post.tipsEnabled;
   const ytId = isUrl ? youtubeEmbedId(post.url) : null;
@@ -371,13 +376,24 @@ export default async function PostDetailPage({
   );
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
+    <div className="mx-auto flex w-full max-w-5xl justify-center gap-8 px-6 py-10">
+      <main className="w-full min-w-0 max-w-3xl">
       <ViewTracker postId={post.id} />
       <nav className="mb-6 text-sm">
         <Link href="/" className="text-gray-500 hover:underline dark:text-gray-400">
           ← 記事一覧へ戻る
         </Link>
       </nav>
+
+      {/* モバイル: 折りたたみ目次（デスクトップは右サイドに固定表示） */}
+      {showToc && (
+        <details className="mb-6 rounded-lg border border-gray-200 p-3 lg:hidden dark:border-gray-800">
+          <summary className="cursor-pointer text-sm font-semibold">📑 目次</summary>
+          <div className="mt-2">
+            <PostTocList toc={toc} />
+          </div>
+        </details>
+      )}
 
       <article>
         {isDeleted ? (
@@ -972,6 +988,19 @@ export default async function PostDetailPage({
           </p>
         )}
       </section>
-    </main>
+      </main>
+
+      {/* デスクトップ: 右サイドに追従（sticky）する目次 */}
+      {showToc && (
+        <aside className="hidden w-56 shrink-0 lg:block">
+          <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-auto">
+            <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              📑 目次
+            </p>
+            <PostTocList toc={toc} />
+          </div>
+        </aside>
+      )}
+    </div>
   );
 }
