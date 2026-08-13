@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { SyncTipsButton } from "@/components/tip/sync-tips-button";
 import { formatXym } from "@/lib/format";
 import { tipStatus, type TipStatus } from "@/lib/tips/status";
+import { explorerTxUrl } from "@/lib/explorer";
 
 export const metadata = { title: "投げ銭履歴" };
 
@@ -14,10 +15,6 @@ function formatDate(d: Date): string {
     timeStyle: "short",
     timeZone: "Asia/Tokyo",
   }).format(d);
-}
-
-function explorerUrl(hash: string): string {
-  return `https://testnet.symbol.fyi/transactions/${hash}`;
 }
 
 function StatusBadge({ status }: { status: TipStatus }) {
@@ -230,7 +227,7 @@ export default async function TipsPage() {
                       <>
                         ・
                         <a
-                          href={explorerUrl(t.txHash)}
+                          href={explorerTxUrl(t.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="underline"
@@ -286,7 +283,7 @@ export default async function TipsPage() {
                       <>
                         ・
                         <a
-                          href={explorerUrl(t.txHash)}
+                          href={explorerTxUrl(t.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="underline"

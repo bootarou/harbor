@@ -7,6 +7,7 @@ import { decryptPrivateKey, WrongPassphraseError } from "@/lib/wallet/crypto";
 import { getStoredWallet } from "@/lib/wallet/storage";
 import { sendTip, sendAnswerTip } from "@/lib/wallet/transfer";
 import { checkSufficientBalance } from "@/lib/wallet/symbol";
+import { explorerTxUrl } from "@/lib/explorer";
 
 const MIN = 0.1;
 const MAX = 10;
@@ -153,7 +154,7 @@ export function TipBox({
           tx: {successHash}
         </p>
         <a
-          href={`https://testnet.symbol.fyi/transactions/${successHash}`}
+          href={explorerTxUrl(successHash)}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-1 inline-block text-xs underline"

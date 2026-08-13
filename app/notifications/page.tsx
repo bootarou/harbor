@@ -7,6 +7,7 @@ import { formatXym } from "@/lib/format";
 import { ThanksButtons } from "@/components/thanks-buttons";
 import { notificationText, notificationUrl } from "@/lib/notifications";
 import { NotificationSettings } from "@/components/notification-settings";
+import { explorerTxUrl } from "@/lib/explorer";
 
 export const metadata = { title: "通知" };
 
@@ -210,7 +211,7 @@ export default async function NotificationsPage() {
                   ・{formatXym(Number(t.amount))} {t.currency}・
                   {formatDate(t.createdAt)}・
                   <a
-                    href={`https://testnet.symbol.fyi/transactions/${t.txHash}`}
+                    href={explorerTxUrl(t.txHash)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline"
