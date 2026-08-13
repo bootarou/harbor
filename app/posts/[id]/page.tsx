@@ -15,6 +15,7 @@ import { selectBestAnswer } from "@/app/answers/actions";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { ReactionBar } from "@/components/reaction-bar";
 import { StampSection } from "@/components/stamp/stamp-section";
+import { StampFloat } from "@/components/stamp/stamp-float";
 import { getPlaceableStamps, getPostStampPlacements } from "@/lib/stamps";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { ShareButtons } from "@/components/share-buttons";
@@ -378,6 +379,9 @@ export default async function PostDetailPage({
   return (
     <main className="relative mx-auto w-full max-w-3xl px-6 py-10">
       <ViewTracker postId={post.id} />
+      {/* 貼られたスタンプが下からゆらゆら上昇する演出（控えめ・pointer-events無効） */}
+      <StampFloat placements={stampPlacements} />
+
       <nav className="mb-6 text-sm">
         <Link href="/" className="text-gray-500 hover:underline dark:text-gray-400">
           ← 記事一覧へ戻る
