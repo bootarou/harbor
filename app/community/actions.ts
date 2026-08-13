@@ -8,7 +8,7 @@ import { rateLimit } from "@/lib/ratelimit";
 import { sendEmail } from "@/lib/email";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { communityMessageSchema, communityTopicSchema } from "@/lib/validations";
-import { trimTopicMessages, shapeMessage, type CommunityMessageView } from "@/lib/community";
+import { shapeMessage, type CommunityMessageView } from "@/lib/community";
 
 export type TopicFormState = {
   error?: string;
@@ -87,6 +87,17 @@ export async function deleteTopic(formData: FormData): Promise<void> {
   });
   if (!existing || existing.authorId !== session.user!.id) return;
 
+  // 投げ銭記録があるトピックは物理削除しない（収益・記録の保全）。
+  // 代わりにアーカイブ（一覧から非表示）にして記録を残す。
+  const tipCount = await prisma.communityTip.count({ where: { topicId } });
+  if (tipCount > 0) {
+    await prisma.communityTopic.update({
+      where: { id: topicId },
+      data: { archived: true },
+    });
+    redirect("/community");
+  }
+
   await prisma.communityTopic.delete({ where: { id: topicId } });
   redirect("/community");
 }
@@ -158,7 +169,11 @@ export async function postMessage(
       body: true,
       createdAt: true,
       userId: true,
-      user: { select: { id: true, displayName: true, avatarUrl: true } },
+      tipTotal: true,
+      tipCount: true,
+      user: {
+        select: { id: true, displayName: true, avatarUrl: true, xymAddress: true },
+      },
       stamp: { select: { id: true, name: true, imageUrl: true } },
     },
   });
@@ -169,13 +184,12 @@ export async function postMessage(
     data: { lastPostedAt: created.createdAt, archived: false },
   });
 
-  // 100件超過の古いメッセージ（hidden=false）を物理削除。
-  await trimTopicMessages(topicId);
-
+  // 投げ銭記録の保全のためメッセージは物理削除しない（表示は最新100件の窓）。
   return { ok: true, message: shapeMessage(created) };
 }
 
-// メッセージ削除（投稿者本人 または トピック作成者・物理削除）。
+// メッセージ削除（投稿者本人 または トピック作成者）。
+// 論理削除（deletedAt）。チャットからは非表示になるが、投げ銭記録・収益では引き続き利用する。
 export async function deleteMessage(
   messageId: string
 ): Promise<{ ok: boolean; error?: string }> {
@@ -192,7 +206,10 @@ export async function deleteMessage(
   const canDelete = msg.userId === userId || msg.topic.authorId === userId;
   if (!canDelete) return { ok: false, error: "削除する権限がありません" };
 
-  await prisma.communityMessage.delete({ where: { id: messageId } });
+  await prisma.communityMessage.update({
+    where: { id: messageId },
+    data: { deletedAt: new Date() },
+  });
   return { ok: true };
 }
 

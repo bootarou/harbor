@@ -16,7 +16,8 @@ export type NotificationType =
   | "qa_best_answer"
   | "status_up"
   | "stamp_sold"
-  | "stamp_placed";
+  | "stamp_placed"
+  | "community_tip";
 
 // 種別の定義（ラベルと既定 ON/OFF）。設定画面・正規化に使う。
 export const NOTIFICATION_TYPES: {
@@ -35,6 +36,7 @@ export const NOTIFICATION_TYPES: {
   { key: "status_up", label: "記事のHarborステータスが上がった", default: true },
   { key: "stamp_sold", label: "スタンプが売れた", default: true },
   { key: "stamp_placed", label: "自分の記事にスタンプが貼られた", default: true },
+  { key: "community_tip", label: "チャットで投げ銭を受け取った", default: true },
 ];
 
 export type NotificationPrefs = Record<NotificationType, boolean>;
@@ -251,6 +253,8 @@ export function notificationUrl(n: {
   if (n.type === "purchase" && n.actorId) return `/users/${n.actorId}`;
   // スタンプが売れた通知は販売者のスタンプ管理へ（postId を持たない）。
   if (n.type === "stamp_sold") return "/stamps/manage";
+  // チャット投げ銭は postId フィールドにトピックIDを入れて該当トピックへ遷移。
+  if (n.type === "community_tip") return n.postId ? `/community/${n.postId}` : "/notifications";
   if (n.postId) return `/posts/${n.postId}`;
   return "/notifications";
 }
@@ -305,6 +309,12 @@ export function notificationText(n: {
       return {
         title: "スタンプが貼られました 🎨",
         body: `${who} さんが「${post}」にスタンプを貼りました`,
+      };
+    case "community_tip":
+      // postTitle にトピック名を入れて渡す。
+      return {
+        title: "チャットで投げ銭が届きました 🎉",
+        body: `${who} さんから ${amt} の投げ銭（${post}）`,
       };
     default:
       return { title: "通知", body: post };

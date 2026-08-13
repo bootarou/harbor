@@ -106,6 +106,7 @@ export function SiteHeader() {
         { href: "/dashboard", label: "マイ記事" },
         { href: "/wallet", label: "ウォレット" },
         { href: "/tips", label: "投げ銭履歴" },
+        { href: "/revenue", label: "収益管理" },
         // 自分の公開ページ（共有しやすい）へ。編集はそのページの「編集」ボタンから。
         { href: userId ? `/users/${userId}` : "/profile", label: "プロフィール" },
         // Harbor Status（港の管制塔）。認証不要だがプロフィールの右に置く。

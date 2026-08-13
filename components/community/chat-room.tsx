@@ -17,6 +17,8 @@ import {
 import type { CommunityMessageView } from "@/lib/community";
 import type { OnlineViewer } from "@/lib/community/presence";
 import type { PlaceableStamp } from "@/lib/stamps";
+import { CommunityTipButton } from "@/components/community/community-tip-button";
+import { TipTotal } from "@/components/community/tip-total";
 
 const POLL_MS = 45_000;
 
@@ -107,9 +109,22 @@ export function ChatRoom({
       const data = (await res.json()) as {
         messages: CommunityMessageView[];
         online: OnlineViewer[];
+        tips?: Record<string, { tipTotal: number; tipCount: number }>;
       };
       appendMessages(data.messages);
       setOnline(data.online);
+      // 既存メッセージへの投げ銭増加をスナップショットで反映。
+      if (data.tips) {
+        const tips = data.tips;
+        setMessages((prev) =>
+          prev.map((m) => {
+            const t = tips[m.id];
+            return t && (t.tipTotal !== m.tipTotal || t.tipCount !== m.tipCount)
+              ? { ...m, tipTotal: t.tipTotal, tipCount: t.tipCount }
+              : m;
+          })
+        );
+      }
     } catch {
       /* ignore */
     }
@@ -147,6 +162,13 @@ export function ChatRoom({
         setError(res.error);
       }
     });
+  }
+
+  // 投げ銭成功時に該当メッセージの合計を更新（カウントアップ・アニメで反映）。
+  function onTipped(messageId: string, tipTotal: number, tipCount: number) {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, tipTotal, tipCount } : m))
+    );
   }
 
   // スタンプは選択した時点で即投稿（本文なし・送信ボタン不要）。
@@ -272,26 +294,48 @@ export function ChatRoom({
                     </button>
                   )}
                 </div>
-                {m.body && (
-                  <p
-                    className={`mt-0.5 inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
-                      mine
-                        ? "bg-teal-500 text-white"
-                        : "bg-gray-100 dark:bg-gray-800"
+                {/* 本文/スタンプと投げ銭バッジを同じ行に横並び（上端揃え・自分は左右反転） */}
+                <div
+                  className={`mt-0.5 flex items-start gap-2 ${
+                    mine ? "flex-row-reverse" : ""
+                  }`}
+                >
+                  <div
+                    className={`flex min-w-0 flex-col gap-1 ${
+                      mine ? "items-end" : "items-start"
                     }`}
                   >
-                    {linkify(m.body)}
-                  </p>
-                )}
-                {m.stamp && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.stamp.imageUrl}
-                    alt={m.stamp.name}
-                    style={{ width: 96, height: 96 }}
-                    className="mt-1 object-contain"
-                  />
-                )}
+                    {m.body && (
+                      <p
+                        className={`inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
+                          mine
+                            ? "bg-teal-500 text-white"
+                            : "bg-gray-100 dark:bg-gray-800"
+                        }`}
+                      >
+                        {linkify(m.body)}
+                      </p>
+                    )}
+                    {m.stamp && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={m.stamp.imageUrl}
+                        alt={m.stamp.name}
+                        style={{ width: 96, height: 96 }}
+                        className="object-contain"
+                      />
+                    )}
+                  </div>
+                  <TipTotal total={m.tipTotal} count={m.tipCount} />
+                  {currentUserId != null && !mine && (
+                    <CommunityTipButton
+                      messageId={m.id}
+                      recipientAddress={m.authorAddress}
+                      authorName={m.user.displayName ?? "この人"}
+                      onTipped={(total, count) => onTipped(m.id, total, count)}
+                    />
+                  )}
+                </div>
               </div>
             </li>
           );

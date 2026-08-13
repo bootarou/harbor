@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMessagesAfter } from "@/lib/community";
+import { getMessagesAfter, getTipTotalsForVisible } from "@/lib/community";
 import { touchPresence, getActiveViewers } from "@/lib/community/presence";
 
 // トピックの新着メッセージ差分＋オンライン閲覧者を返す。閲覧は誰でも可。
@@ -43,5 +43,8 @@ export async function GET(
     avatarUrl: v.avatarUrl,
   }));
 
-  return NextResponse.json({ messages, online });
+  // 表示中メッセージへの投げ銭合計スナップショット（既存メッセージのtip増加を反映）。
+  const tips = await getTipTotalsForVisible(topicId);
+
+  return NextResponse.json({ messages, online, tips });
 }

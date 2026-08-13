@@ -45,6 +45,21 @@ function StatusBadge({ status }: { status: TipStatus }) {
   );
 }
 
+// 記事投げ銭とチャット投げ銭を統合した履歴の1件。
+type HistoryItem = {
+  id: string;
+  title: string;
+  href: string;
+  chat: boolean; // チャット投げ銭バッジ用
+  amount: number;
+  confirmed: boolean;
+  status: TipStatus;
+  date: Date;
+  txHash: string | null;
+  anonymous?: boolean;
+  who?: { name: string; id: string | null } | null; // 受取: 送信者
+};
+
 export default async function TipsPage() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -52,7 +67,7 @@ export default async function TipsPage() {
   }
   const me = session.user.id;
 
-  const [sent, received] = await Promise.all([
+  const [sentTips, receivedTips, sentCtips, receivedCtips] = await Promise.all([
     prisma.tip.findMany({
       where: { fromUserId: me },
       orderBy: { confirmedAt: "desc" },
@@ -64,7 +79,6 @@ export default async function TipsPage() {
         confirmedAt: true,
         createdAt: true,
         txHash: true,
-        toAddress: true,
         post: { select: { id: true, title: true } },
       },
     }),
@@ -78,20 +92,109 @@ export default async function TipsPage() {
         confirmed: true,
         confirmedAt: true,
         createdAt: true,
-        fromAddress: true,
         fromUser: { select: { id: true, displayName: true } },
         post: { select: { id: true, title: true } },
       },
     }),
+    prisma.communityTip.findMany({
+      where: { fromUserId: me },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        amount: true,
+        confirmed: true,
+        createdAt: true,
+        txHash: true,
+        topicId: true,
+        message: { select: { topic: { select: { name: true } } } },
+      },
+    }),
+    prisma.communityTip.findMany({
+      where: { message: { userId: me } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        amount: true,
+        confirmed: true,
+        createdAt: true,
+        topicId: true,
+        txHash: true,
+        fromUser: { select: { id: true, displayName: true } },
+        message: { select: { topic: { select: { name: true } } } },
+      },
+    }),
   ]);
 
-  // 合計は確定分のみ（未確定・期限切れは表示はするが合計には含めない）。
-  const sentTotal = sent
-    .filter((t) => t.confirmed)
-    .reduce((s, t) => s + Number(t.amount), 0);
+  const sent: HistoryItem[] = [
+    ...sentTips.map((t) => ({
+      id: t.id,
+      title: t.post.title,
+      href: `/posts/${t.post.id}`,
+      chat: false,
+      amount: Number(t.amount),
+      confirmed: t.confirmed,
+      status: tipStatus(t),
+      date: t.confirmedAt,
+      txHash: t.txHash,
+      anonymous: t.anonymous,
+    })),
+    ...sentCtips.map((t) => ({
+      id: t.id,
+      title: t.message.topic.name,
+      href: `/community/${t.topicId}`,
+      chat: true,
+      amount: Number(t.amount),
+      confirmed: t.confirmed,
+      status: (t.confirmed ? "confirmed" : "pending") as TipStatus,
+      date: t.createdAt,
+      txHash: t.txHash,
+    })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  const received: HistoryItem[] = [
+    ...receivedTips.map((t) => ({
+      id: t.id,
+      title: t.post.title,
+      href: `/posts/${t.post.id}`,
+      chat: false,
+      amount: Number(t.amount),
+      confirmed: t.confirmed,
+      status: tipStatus(t),
+      date: t.confirmedAt,
+      txHash: null,
+      who: t.anonymous
+        ? { name: "匿名", id: null }
+        : t.fromUser
+          ? { name: t.fromUser.displayName, id: t.fromUser.id }
+          : { name: "不明", id: null },
+    })),
+    ...receivedCtips.map((t) => ({
+      id: t.id,
+      title: t.message.topic.name,
+      href: `/community/${t.topicId}`,
+      chat: true,
+      amount: Number(t.amount),
+      confirmed: t.confirmed,
+      status: (t.confirmed ? "confirmed" : "pending") as TipStatus,
+      date: t.createdAt,
+      txHash: t.txHash,
+      who: t.fromUser
+        ? { name: t.fromUser.displayName, id: t.fromUser.id }
+        : { name: "不明", id: null },
+    })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  // 合計は確定分のみ。
+  const sentTotal = sent.filter((t) => t.confirmed).reduce((s, t) => s + t.amount, 0);
   const receivedTotal = received
     .filter((t) => t.confirmed)
-    .reduce((s, t) => s + Number(t.amount), 0);
+    .reduce((s, t) => s + t.amount, 0);
+
+  const ChatBadge = () => (
+    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+      チャット
+    </span>
+  );
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
@@ -114,28 +217,32 @@ export default async function TipsPage() {
             {sent.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
-                  <Link
-                    href={`/posts/${t.post.id}`}
-                    className="truncate font-medium hover:underline"
-                  >
-                    {t.post.title}
+                  <Link href={t.href} className="truncate font-medium hover:underline">
+                    {t.chat ? "💬 " : ""}
+                    {t.title}
                   </Link>
                   <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <StatusBadge status={tipStatus(t)} />
-                    {formatDate(t.confirmedAt)}
-                    {t.anonymous && "・匿名"}・
-                    <a
-                      href={explorerUrl(t.txHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline"
-                    >
-                      tx
-                    </a>
+                    {t.chat && <ChatBadge />}
+                    <StatusBadge status={t.status} />
+                    {formatDate(t.date)}
+                    {t.anonymous && "・匿名"}
+                    {t.txHash && (
+                      <>
+                        ・
+                        <a
+                          href={explorerUrl(t.txHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          tx
+                        </a>
+                      </>
+                    )}
                   </p>
                 </div>
                 <span className="shrink-0 font-semibold">
-                  {formatXym(Number(t.amount))} XYM
+                  {formatXym(t.amount)} XYM
                 </span>
               </li>
             ))}
@@ -157,31 +264,41 @@ export default async function TipsPage() {
             {received.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
-                  <Link
-                    href={`/posts/${t.post.id}`}
-                    className="truncate font-medium hover:underline"
-                  >
-                    {t.post.title}
+                  <Link href={t.href} className="truncate font-medium hover:underline">
+                    {t.chat ? "💬 " : ""}
+                    {t.title}
                   </Link>
                   <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <StatusBadge status={tipStatus(t)} />
-                    {t.anonymous ? (
-                      "匿名"
-                    ) : t.fromUser ? (
+                    {t.chat && <ChatBadge />}
+                    <StatusBadge status={t.status} />
+                    {t.who?.id ? (
                       <Link
-                        href={`/users/${t.fromUser.id}`}
+                        href={`/users/${t.who.id}`}
                         className="font-medium text-gray-700 hover:underline dark:text-gray-200"
                       >
-                        {t.fromUser.displayName}
+                        {t.who.name}
                       </Link>
                     ) : (
-                      "不明"
+                      t.who?.name ?? "不明"
                     )}
-                    ・{formatDate(t.confirmedAt)}
+                    ・{formatDate(t.date)}
+                    {t.txHash && (
+                      <>
+                        ・
+                        <a
+                          href={explorerUrl(t.txHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          tx
+                        </a>
+                      </>
+                    )}
                   </p>
                 </div>
                 <span className="shrink-0 font-semibold text-green-700 dark:text-green-300">
-                  +{formatXym(Number(t.amount))} XYM
+                  +{formatXym(t.amount)} XYM
                 </span>
               </li>
             ))}

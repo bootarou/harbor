@@ -18,6 +18,8 @@ const TRANSFER_TYPE = 16724; // 0x4154 TransferTransaction
 const TIP_MARKER = /nagexym:tip:([A-Za-z0-9_-]+)/;
 // 回答への投げ銭マーカー（記事への投げ銭 nagexym:tip: とは別系統）。
 const ANSWER_TIP_MARKER = /nagexym:atip:([A-Za-z0-9_-]+)/;
+// コミュニティチャットの投げ銭マーカー。
+const COMMUNITY_TIP_MARKER = /nagexym:ctip:([A-Za-z0-9_-]+)/;
 
 type RestTransaction = {
   meta?: { hash?: string };
@@ -119,6 +121,42 @@ export function parseAnswerTipTransaction(
   return { txHash: hash.toUpperCase(), answerId, fromAddress, amountXym };
 }
 
+export type ParsedCommunityTip = {
+  txHash: string;
+  messageId: string;
+  fromAddress: string;
+  amountXym: number;
+};
+
+/** REST のトランザクション 1 件を「チャットの投げ銭」としてパースする（純粋関数）。 */
+export function parseCommunityTipTransaction(
+  item: RestTransaction,
+  currencyMosaicId: string,
+  networkType: number
+): ParsedCommunityTip | null {
+  const tx = item.transaction;
+  const hash = item.meta?.hash;
+  if (!tx || !hash || !tx.signerPublicKey) return null;
+
+  const message = decodeMessage(tx.message);
+  const marker = COMMUNITY_TIP_MARKER.exec(message);
+  if (!marker) return null;
+  const messageId = marker[1];
+
+  const mosaic = (tx.mosaics ?? []).find(
+    (m) => m.id.toUpperCase() === currencyMosaicId
+  );
+  if (!mosaic) return null;
+  const amountXym = Number(mosaic.amount) / 1_000_000;
+
+  const fromAddress = Address.createFromPublicKey(
+    tx.signerPublicKey,
+    networkType
+  ).plain();
+
+  return { txHash: hash.toUpperCase(), messageId, fromAddress, amountXym };
+}
+
 export type PollResult = { scanned: number; confirmed: number; created: number };
 
 // 複数アドレスを連続でポーリングする際の間隔（ms）。
@@ -217,6 +255,30 @@ async function confirmAnswerTip(
   }
 }
 
+/**
+ * チャット投げ銭 1 件を確定する。アプリ経由で記録済み(confirmed=false)のものを
+ * txHash 一致で確定にする。集計(tipTotal/tipCount)は記録時に加算済みのため触らない
+ * （二重計上を避ける）。記録が無い外部送金は対象外。
+ */
+async function confirmCommunityTip(
+  parsed: ParsedCommunityTip,
+  address: string,
+  result: PollResult
+): Promise<void> {
+  const existing = await prisma.communityTip.findUnique({
+    where: { txHash: parsed.txHash },
+    select: { confirmed: true, toAddress: true },
+  });
+  if (!existing || existing.toAddress !== address) return; // 未記録/宛先不一致は無視
+  if (!existing.confirmed) {
+    await prisma.communityTip.update({
+      where: { txHash: parsed.txHash },
+      data: { confirmed: true },
+    });
+    result.confirmed += 1;
+  }
+}
+
 /** 指定アドレス宛の確定済み送金を取得し、該当する投げ銭を確定する。 */
 export async function pollAddressTips(address: string): Promise<PollResult> {
   const currencyId = await getCurrencyMosaicId();
@@ -239,6 +301,14 @@ export async function pollAddressTips(address: string): Promise<PollResult> {
     const parsedAnswer = parseAnswerTipTransaction(item, currencyId, networkType);
     if (parsedAnswer) {
       await confirmAnswerTip(parsedAnswer, address, jpyRateDec, result);
+      continue;
+    }
+
+    // チャットの投げ銭（nagexym:ctip:）を判定する。同じ受取アドレス走査で相乗り確定
+    // （追加のノードリクエストなし）。
+    const parsedCtip = parseCommunityTipTransaction(item, currencyId, networkType);
+    if (parsedCtip) {
+      await confirmCommunityTip(parsedCtip, address, result);
       continue;
     }
 

@@ -9,10 +9,13 @@ export type RevenueFilter = {
 
 export type RevenueCategory =
   | "sale"
+  | "stamp_sale"
   | "tip_in"
   | "tip_out"
   | "thanks_in"
-  | "thanks_out";
+  | "thanks_out"
+  | "ctip_in"
+  | "ctip_out";
 
 export type RevenueRecord = {
   date: Date;
@@ -59,7 +62,16 @@ export async function getRevenueRecords(
   const range = dateRange(filter);
   const confirmedOnly = filter.status === "confirmed";
 
-  const [purchases, tips, tipsOut, thanksIn, thanksOut] = await Promise.all([
+  const [
+    purchases,
+    stampSales,
+    tips,
+    tipsOut,
+    thanksIn,
+    thanksOut,
+    ctipsIn,
+    ctipsOut,
+  ] = await Promise.all([
     prisma.purchase.findMany({
       where: {
         post: { authorId: userId },
@@ -75,6 +87,23 @@ export async function getRevenueRecords(
         confirmed: true,
         jpyRate: true,
         post: { select: { title: true } },
+      },
+    }),
+    // スタンプ販売（販売者＝自分が作成したスタンプの購入）。
+    prisma.stampPurchase.findMany({
+      where: {
+        stamp: { authorId: userId },
+        ...(confirmedOnly ? { confirmed: true } : {}),
+        ...(range ? { purchasedAt: range } : {}),
+      },
+      select: {
+        purchasedAt: true,
+        amount: true,
+        txHash: true,
+        confirmed: true,
+        jpyRate: true,
+        stamp: { select: { name: true } },
+        buyer: { select: { displayName: true } },
       },
     }),
     prisma.tip.findMany({
@@ -146,6 +175,40 @@ export async function getRevenueRecords(
         post: { select: { title: true } },
       },
     }),
+    // チャット投げ銭（受取）: 自分のメッセージへの投げ銭。削除済みメッセージ分も計上する。
+    prisma.communityTip.findMany({
+      where: {
+        message: { userId },
+        ...(confirmedOnly ? { confirmed: true } : {}),
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: {
+        createdAt: true,
+        amount: true,
+        fromAddress: true,
+        txHash: true,
+        confirmed: true,
+        jpyRate: true,
+        message: { select: { topic: { select: { name: true } } } },
+      },
+    }),
+    // チャット投げ銭（送信）。
+    prisma.communityTip.findMany({
+      where: {
+        fromUserId: userId,
+        ...(confirmedOnly ? { confirmed: true } : {}),
+        ...(range ? { createdAt: range } : {}),
+      },
+      select: {
+        createdAt: true,
+        amount: true,
+        toAddress: true,
+        txHash: true,
+        confirmed: true,
+        jpyRate: true,
+        message: { select: { topic: { select: { name: true } } } },
+      },
+    }),
   ]);
 
   const records: RevenueRecord[] = [
@@ -163,6 +226,24 @@ export async function getRevenueRecords(
         currency: p.currency,
         txHash: p.txHash,
         confirmed: p.confirmed,
+        jpyRate: rate,
+        jpyValue: jpyValue(amount, rate),
+      };
+    }),
+    ...stampSales.map((s): RevenueRecord => {
+      const amount = Number(s.amount);
+      const rate = s.jpyRate != null ? Number(s.jpyRate) : null;
+      return {
+        date: s.purchasedAt,
+        category: "stamp_sale",
+        direction: "in",
+        label: "スタンプ販売",
+        title: s.stamp.name,
+        counterparty: s.buyer?.displayName ?? "購入者",
+        amount,
+        currency: "XYM",
+        txHash: s.txHash,
+        confirmed: s.confirmed,
         jpyRate: rate,
         jpyValue: jpyValue(amount, rate),
       };
@@ -235,6 +316,42 @@ export async function getRevenueRecords(
         currency: t.currency,
         txHash: t.txHash,
         confirmed: t.status === "confirmed",
+        jpyRate: rate,
+        jpyValue: jpyValue(amount, rate),
+      };
+    }),
+    ...ctipsIn.map((t): RevenueRecord => {
+      const amount = Number(t.amount);
+      const rate = t.jpyRate != null ? Number(t.jpyRate) : null;
+      return {
+        date: t.createdAt,
+        category: "ctip_in",
+        direction: "in",
+        label: "チャット投げ銭受取",
+        title: t.message.topic.name,
+        counterparty: t.fromAddress,
+        amount,
+        currency: "XYM",
+        txHash: t.txHash,
+        confirmed: t.confirmed,
+        jpyRate: rate,
+        jpyValue: jpyValue(amount, rate),
+      };
+    }),
+    ...ctipsOut.map((t): RevenueRecord => {
+      const amount = Number(t.amount);
+      const rate = t.jpyRate != null ? Number(t.jpyRate) : null;
+      return {
+        date: t.createdAt,
+        category: "ctip_out",
+        direction: "out",
+        label: "チャット投げ銭送信",
+        title: t.message.topic.name,
+        counterparty: t.toAddress,
+        amount,
+        currency: "XYM",
+        txHash: t.txHash,
+        confirmed: t.confirmed,
         jpyRate: rate,
         jpyValue: jpyValue(amount, rate),
       };

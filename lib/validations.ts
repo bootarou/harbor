@@ -193,6 +193,14 @@ export const communityMessageSchema = z
 
 export type CommunityMessageInput = z.infer<typeof communityMessageSchema>;
 
+// コミュニティ投げ銭の記録入力（金額/送金元はサーバーがノードで検証して採用）。
+export const communityTipSchema = z.object({
+  messageId: z.string().min(1),
+  txHash: z.string().regex(/^[0-9A-Fa-f]{64}$/, "txHash の形式が正しくありません"),
+});
+
+export type CommunityTipInput = z.infer<typeof communityTipSchema>;
+
 // Thanks 送信記録の検証入力（検証はサーバーがノードで行う）。
 export const thanksApiSchema = z.object({
   reactionId: z.string().min(1),

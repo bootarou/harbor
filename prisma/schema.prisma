@@ -60,6 +60,7 @@ model User {
   stampPlacements StampPlacement[] @relation("StampPlacer")
   communityTopics   CommunityTopic[]   @relation("CommunityTopicAuthor")
   communityMessages CommunityMessage[] @relation("CommunityMessageAuthor")
+  communityTipsSent CommunityTip[]     @relation("CommunityTipSender")
 }
 
 // Web Push の購読情報（ブラウザ許可時にクライアントから保存）。
@@ -478,8 +479,35 @@ model CommunityMessage {
   stampId   String? // 添付スタンプ（任意）
   stamp     Stamp?         @relation(fields: [stampId], references: [id], onDelete: SetNull)
   hidden    Boolean        @default(false) // 通報による非表示（DBには残す・物理削除の対象外）
+  deletedAt DateTime? // 投稿者/トピック作成者による論理削除（チャットから非表示・記録/収益は保持）
+  tipTotal  Decimal        @default(0) // 投げ銭合計（表示用の非正規化・確定投げ銭で加算）
+  tipCount  Int            @default(0) // 投げ銭した人数（表示用）
   createdAt DateTime       @default(now())
+
+  tips CommunityTip[]
 
   @@index([topicId, createdAt])
   @@index([userId])
+}
+
+// コミュニティチャットのメッセージへの投げ銭（P2P・オンチェーン検証）。
+// メッセージは投げ銭が付くと保全対象（物理削除しない）。記録は収益にも計上する。
+model CommunityTip {
+  id          String           @id @default(cuid())
+  messageId   String
+  message     CommunityMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  topicId     String // 集計/参照用の非正規化
+  fromUserId  String? // 送信者（退会耐性で SetNull）
+  fromUser    User?            @relation("CommunityTipSender", fields: [fromUserId], references: [id], onDelete: SetNull)
+  fromAddress String
+  toAddress   String // 受信者＝メッセージ投稿者の xymAddress
+  amount      Decimal
+  txHash      String           @unique // 二重記録防止
+  confirmed   Boolean          @default(false)
+  jpyRate     Decimal?
+  createdAt   DateTime         @default(now())
+
+  @@index([messageId])
+  @@index([topicId])
+  @@index([fromUserId])
 }

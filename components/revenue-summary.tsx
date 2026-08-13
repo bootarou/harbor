@@ -46,10 +46,13 @@ export async function RevenueSummary({
 
   const cat: Record<RevenueCategory, Bucket> = {
     sale: zero(),
+    stamp_sale: zero(),
     tip_in: zero(),
     tip_out: zero(),
     thanks_in: zero(),
     thanks_out: zero(),
+    ctip_in: zero(),
+    ctip_out: zero(),
   };
   const months = new Map<string, Record<RevenueCategory, Bucket>>();
   const ensureMonth = (m: string) => {
@@ -57,10 +60,13 @@ export async function RevenueSummary({
     if (!r) {
       r = {
         sale: zero(),
+        stamp_sale: zero(),
         tip_in: zero(),
         tip_out: zero(),
         thanks_in: zero(),
         thanks_out: zero(),
+        ctip_in: zero(),
+        ctip_out: zero(),
       };
       months.set(m, r);
     }
@@ -75,10 +81,20 @@ export async function RevenueSummary({
     mb[rec.category].jpy += jpy;
   }
 
-  const incomeXym = cat.sale.xym + cat.tip_in.xym + cat.thanks_in.xym;
-  const incomeJpy = cat.sale.jpy + cat.tip_in.jpy + cat.thanks_in.jpy;
-  const outXym = cat.tip_out.xym + cat.thanks_out.xym;
-  const outJpy = cat.tip_out.jpy + cat.thanks_out.jpy;
+  const incomeXym =
+    cat.sale.xym +
+    cat.stamp_sale.xym +
+    cat.tip_in.xym +
+    cat.thanks_in.xym +
+    cat.ctip_in.xym;
+  const incomeJpy =
+    cat.sale.jpy +
+    cat.stamp_sale.jpy +
+    cat.tip_in.jpy +
+    cat.thanks_in.jpy +
+    cat.ctip_in.jpy;
+  const outXym = cat.tip_out.xym + cat.thanks_out.xym + cat.ctip_out.xym;
+  const outJpy = cat.tip_out.jpy + cat.thanks_out.jpy + cat.ctip_out.jpy;
   const netXym = incomeXym - outXym;
   const netJpy = incomeJpy - outJpy;
 
@@ -92,10 +108,13 @@ export async function RevenueSummary({
     if (!yb) {
       yb = {
         sale: zero(),
+        stamp_sale: zero(),
         tip_in: zero(),
         tip_out: zero(),
         thanks_in: zero(),
         thanks_out: zero(),
+        ctip_in: zero(),
+        ctip_out: zero(),
       };
       years.set(y, yb);
     }
@@ -190,8 +209,10 @@ export async function RevenueSummary({
           <p className="mb-2 text-sm font-semibold">受取</p>
           <div className="flex flex-col gap-1 text-sm">
             <Line label="販売" b={cat.sale} />
+            <Line label="スタンプ販売" b={cat.stamp_sale} />
             <Line label="投げ銭受取" b={cat.tip_in} />
             <Line label="Thanks受取" b={cat.thanks_in} />
+            <Line label="チャット投げ銭受取" b={cat.ctip_in} />
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
@@ -199,6 +220,7 @@ export async function RevenueSummary({
           <div className="flex flex-col gap-1 text-sm">
             <Line label="投げ銭送信" b={cat.tip_out} />
             <Line label="Thanks送信" b={cat.thanks_out} />
+            <Line label="チャット投げ銭送信" b={cat.ctip_out} />
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900">
@@ -233,16 +255,20 @@ export async function RevenueSummary({
               </thead>
               <tbody>
                 {yearRows.map(([y, b]) => {
-                  const income = b.sale.jpy + b.tip_in.jpy + b.thanks_in.jpy;
-                  const net = income - b.tip_out.jpy - b.thanks_out.jpy;
+                  // スタンプ販売は「販売」列、チャット投げ銭は「投げ銭」列に合算（列と収入/差引を整合）。
+                  const saleJpy = b.sale.jpy + b.stamp_sale.jpy;
+                  const tipInJpy = b.tip_in.jpy + b.ctip_in.jpy;
+                  const tipOutJpy = b.tip_out.jpy + b.ctip_out.jpy;
+                  const income = saleJpy + tipInJpy + b.thanks_in.jpy;
+                  const net = income - tipOutJpy - b.thanks_out.jpy;
                   return (
                     <tr
                       key={y}
                       className="border-b border-gray-100 dark:border-gray-900"
                     >
                       <td className="py-2 pr-3 font-medium">{y}年</td>
-                      <td className="py-2 pr-3 text-right">{yen(b.sale.jpy)}</td>
-                      <td className="py-2 pr-3 text-right">{yen(b.tip_in.jpy)}</td>
+                      <td className="py-2 pr-3 text-right">{yen(saleJpy)}</td>
+                      <td className="py-2 pr-3 text-right">{yen(tipInJpy)}</td>
                       <td className="py-2 pr-3 text-right">
                         {yen(b.thanks_in.jpy)}
                       </td>
@@ -250,7 +276,7 @@ export async function RevenueSummary({
                         {yen(income)}
                       </td>
                       <td className="py-2 pr-3 text-right">
-                        {yen(b.tip_out.jpy)}
+                        {yen(tipOutJpy)}
                       </td>
                       <td className="py-2 pr-3 text-right">
                         {yen(b.thanks_out.jpy)}
@@ -287,11 +313,15 @@ export async function RevenueSummary({
             </thead>
             <tbody>
               {monthRows.map(([m, b]) => {
+                // スタンプ販売は「販売」列、チャット投げ銭は「投げ銭」列に合算（列と差引を整合）。
+                const saleJpy = b.sale.jpy + b.stamp_sale.jpy;
+                const tipInJpy = b.tip_in.jpy + b.ctip_in.jpy;
+                const tipOutJpy = b.tip_out.jpy + b.ctip_out.jpy;
                 const net =
-                  b.sale.jpy +
-                  b.tip_in.jpy +
+                  saleJpy +
+                  tipInJpy +
                   b.thanks_in.jpy -
-                  b.tip_out.jpy -
+                  tipOutJpy -
                   b.thanks_out.jpy;
                 return (
                   <tr
@@ -299,10 +329,10 @@ export async function RevenueSummary({
                     className="border-b border-gray-100 dark:border-gray-900"
                   >
                     <td className="py-2 pr-3 font-medium">{m}</td>
-                    <td className="py-2 pr-3 text-right">{yen(b.sale.jpy)}</td>
-                    <td className="py-2 pr-3 text-right">{yen(b.tip_in.jpy)}</td>
+                    <td className="py-2 pr-3 text-right">{yen(saleJpy)}</td>
+                    <td className="py-2 pr-3 text-right">{yen(tipInJpy)}</td>
                     <td className="py-2 pr-3 text-right">{yen(b.thanks_in.jpy)}</td>
-                    <td className="py-2 pr-3 text-right">{yen(b.tip_out.jpy)}</td>
+                    <td className="py-2 pr-3 text-right">{yen(tipOutJpy)}</td>
                     <td className="py-2 pr-3 text-right">{yen(b.thanks_out.jpy)}</td>
                     <td className="py-2 text-right font-semibold">{yen(net)}</td>
                   </tr>

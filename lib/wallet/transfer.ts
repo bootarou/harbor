@@ -48,6 +48,11 @@ export function buildStampMessage(stampId: string): string {
   return `nagexym:stamp:${stampId}`;
 }
 
+// コミュニティチャットのメッセージへの投げ銭用マーカー。
+export function buildCommunityTipMessage(messageId: string): string {
+  return `nagexym:ctip:${messageId}`;
+}
+
 let cachedParams: NetworkParams | null = null;
 
 export async function fetchNetworkParams(): Promise<NetworkParams> {
@@ -245,6 +250,27 @@ export async function sendStampPurchase(args: {
     recipientAddress: args.recipientAddress,
     amountXym: args.amountXym,
     message: buildStampMessage(args.stampId),
+    params,
+  });
+  await announceTransaction(signed.payload);
+  return signed;
+}
+
+/**
+ * コミュニティチャットの投げ銭: メッセージ投稿者のアドレスへ送り、専用マーカーを付与する。
+ */
+export async function sendCommunityTip(args: {
+  privateKey: string;
+  recipientAddress: string;
+  amountXym: number;
+  messageId: string;
+}): Promise<SignedTip> {
+  const params = await fetchNetworkParams();
+  const signed = buildSignedTip({
+    privateKey: args.privateKey,
+    recipientAddress: args.recipientAddress,
+    amountXym: args.amountXym,
+    message: buildCommunityTipMessage(args.messageId),
     params,
   });
   await announceTransaction(signed.payload);
