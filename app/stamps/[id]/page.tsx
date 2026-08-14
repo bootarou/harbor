@@ -21,7 +21,7 @@ async function getStamp(id: string) {
       published: true,
       authorId: true,
       author: { select: { id: true, displayName: true, xymAddress: true } },
-      _count: { select: { placements: true } },
+      _count: { select: { placements: true, communityMessages: true } },
     },
   });
 }
@@ -154,7 +154,7 @@ export default async function StampDetailPage({
         </div>
 
         <p className="mt-2 text-xs text-gray-400">
-          このスタンプは {stamp._count.placements} 回使われています
+          このスタンプは {stamp._count.placements + stamp._count.communityMessages} 回使われています（記事 {stamp._count.placements}・チャット {stamp._count.communityMessages}）
         </p>
 
         {stamp.published && (
