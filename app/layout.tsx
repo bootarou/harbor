@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { SiteHeader } from "@/components/site-header";
@@ -28,6 +28,17 @@ export const metadata: Metadata = {
     description: "⚓Harbor — Symbol(XYM) で投げ銭できるノンカストディアル・ブログ",
     images: ["/og-default.png"],
   },
+  // ホーム画面追加（iOS PWA）用。app/apple-icon.png / app/manifest.ts は自動リンクされる。
+  appleWebApp: {
+    capable: true,
+    title: "Harbor",
+    statusBarStyle: "default",
+  },
+};
+
+// PWA 起動画面/ステータスバーの配色（ブランドのティール）。
+export const viewport: Viewport = {
+  themeColor: "#02c39a",
 };
 
 export default function RootLayout({
