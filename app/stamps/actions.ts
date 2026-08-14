@@ -24,9 +24,9 @@ export async function saveStamp(
   }
   const userId = session.user.id;
 
-  // 著作権確認は作成・更新とも必須（他者の著作物の無断販売を防ぐ）。
+  // 権利・法令/利用規約に違反しないことの確認は作成・更新とも必須。
   if (formData.get("copyright") !== "true") {
-    return { error: "スタンプの著作権に関する確認にチェックしてください。" };
+    return { error: "権利・法令/利用規約に関する確認にチェックしてください。" };
   }
 
   const priceRaw = formData.get("price");

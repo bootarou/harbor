@@ -162,7 +162,7 @@ export function StampForm({ initial }: { initial: StampInitial }) {
       <div className="rounded-md bg-yellow-50 p-3 text-xs text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200">
         <label className="flex items-start gap-2">
           <input type="checkbox" name="copyright" value="true" className="mt-0.5" />
-          このスタンプ画像は自分が権利を持つ（または利用許諾を得た）ものであり、第三者の著作権を侵害しないことを確認します。
+          このスタンプ画像は自分が権利を持つ（または利用許諾を得た）ものであり、法令・利用規約に違反しないことを確認します。
         </label>
       </div>
 
