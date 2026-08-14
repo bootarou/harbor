@@ -18,8 +18,10 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - symbol-sdk / symbol-hd-wallets（Symbol ウォレット・署名・送金・着金検証）
 - Web Crypto API（PBKDF2 + AES-256-GCM、ローカル鍵暗号化）
 - nodemailer（通報通知メール / SMTP 未設定時はログ出力）
+- web-push（ブラウザプッシュ通知・VAPID・第三者 SaaS 不使用）
 - sharp（画像保存時のリサイズ・再エンコード圧縮）
 - 画像: S3 互換オブジェクトストレージ（未設定時は `public/uploads/` にローカル保存）
+- PWA（Web App Manifest・高解像度アイコン・ホーム画面追加対応）
 
 ## 主な機能
 
@@ -34,16 +36,32 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - 記事投稿（Tiptap・画像・タグ・下書き/公開・予約投稿・CRUD、保存時に HTML サニタイズ）
 - **外部コンテンツ URL 共有投稿**（OGP 取得によるリンクカード、YouTube は oEmbed + サムネイル対応）
 - 記事一覧 / 詳細 / 検索 / タグ絞り込み / **フォロー中フィード**（`/feed`）
+- **目次（TOC）**: 見出しから自動生成。広い画面は右サイドに追従、モバイルは折りたたみ
 - コメント（`@` で記事の参加者に**メンション**可能）、**リアクション**（👍❤️💡🔥🙏）
 - **インプレッション（ビュー）カウント**、記事の**通報**（メール通知）
 - **通知**（サイト内ベル / ブラウザプッシュ / メール、種類ごとに ON/OFF・詳細は後述）
+
+### スタンプ
+- 誰でもスタンプを**作成・販売・購入**（購入＝使用権の取得＝所有証明・**0 XYM の無料**も可）
+- 購入/自作スタンプを**記事に貼付**・**コミュニティチャットで送信**
+- スタンプショップ（新着 / 人気 / 作者別）・**個別共有ページ（OGPカード）**・購入済み一覧
+- 貼付スタンプは記事で**下からゆらゆら上昇する演出**（控えめ・オフ切替・reduced-motion 配慮）
+- 作成時に権利・法令/利用規約違反でないことの確認を必須化
+
+### コミュニティ「港の広場」（`/community`）
+- トピックを立てて会話するオープンチャット
+- **スタンプ送信**・**URL 自動リンク**・**オンライン（在室）表示**・自分の発言は右寄せ
+- メッセージへの**投げ銭**（P2P・合計/人数バッジ＋カウントアップ演出・収益/履歴連携）
+- **通報で非表示化**（ログは保持）・**30日無投稿で自動アーカイブ**・最新100件表示（メッセージは全件保持）
 
 ### Symbol / 送金まわり（すべて P2P・ノンカストディアル）
 - ノンカストディアル・ウォレット（作成・バックアップ・暗号化保存・復元）
 - **投げ銭**（スライダー 0.1〜10 XYM・署名・アナウンス・記録・着金ポーリングで確定）
 - **Thanks / Super Thanks**（投稿者 → 読者への固定額の感謝送金）
 - **有料記事・購読権販売**（試し読み + 有料部分、購入は販売者へ直接 P2P 送金しサーバーがオンチェーン検証）
-- **収益管理ダッシュボード**（`/revenue`）: 販売・投げ銭の月次集計、取引時レートでの円換算、会計用 CSV エクスポート
+- **スタンプ購入**（作者へ直接送金・オンチェーン検証。0 XYM はメッセージのみの送金で所有証明を残す）
+- **チャット投げ銭**（コミュニティのメッセージへ P2P 投げ銭）
+- **収益管理ダッシュボード**（`/revenue`）: 販売・投げ銭・スタンプ販売・チャット投げ銭を統合した月次/年次集計、取引時レートでの円換算、会計用 CSV エクスポート
 - 複数ノードによる**フェイルオーバー**（ノード冗長化）
 
 ### デプロイ・セキュリティ
@@ -129,7 +147,9 @@ npm run dev   # http://localhost:3000
 - `NEXT_PUBLIC_SITE_URL` — 本番サイト URL（OG/メタデータ用）
 - `NEXT_PUBLIC_SYMBOL_NETWORK` — `testnet`（既定）/ `mainnet`
 - `NEXT_PUBLIC_SYMBOL_NODE_URL` — Symbol ノードの REST URL。**カンマ区切りで複数指定**すると先頭から順にフェイルオーバー
-- `CRON_SECRET` — 着金ポーリング cron の Bearer シークレット
+- `NEXT_PUBLIC_SYMBOL_EXPLORER_URL` — ブロックエクスプローラーの URL（任意）。未設定なら NETWORK に応じ testnet/mainnet を自動選択
+- `CRON_SECRET` — 着金ポーリング / トピック自動アーカイブ cron の Bearer シークレット
+- `ADMIN_SECRET` — 管理 API（コミュニティ投稿ログの完全削除など）の Bearer シークレット
 - `REPORT_NOTIFY_EMAIL` / `SMTP_*` — 通報・各種通知メール（SMTP 未設定時は実送信せずサーバーログに出力）
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — ブラウザプッシュ通知（Web Push / VAPID）。未設定ならプッシュのみ無効（[通知](#通知)参照）
 - `S3_*` / `NEXT_PUBLIC_S3_PUBLIC_URL` — 画像ストレージ（未設定ならローカル保存）
@@ -147,9 +167,11 @@ npm run dev   # http://localhost:3000
   記事に紐付け、「確定」にします。
 - 実行方法:
   - 手動: `/tips` の「着金を同期」ボタン（ログインユーザー自身の着金）
-  - cron: `GET /api/cron/poll-tips`（`Authorization: Bearer $CRON_SECRET`）
+  - cron: `GET /api/cron/poll-tips`（`Authorization: Bearer $CRON_SECRET`）。同 cron でチャット投げ銭も確定
+  - cron: `GET /api/cron/archive-topics`（30日無投稿トピックの自動アーカイブ）
 
-> 有料記事の購入（`nagexym:buy:<postId>`）・Thanks（`nagexym:thanks:<reactionId>`）も、サーバーが
+> 有料記事の購入（`nagexym:buy:<postId>`）・Thanks（`nagexym:thanks:<reactionId>`）・スタンプ購入
+> （`nagexym:stamp:<stampId>`）・チャット投げ銭（`nagexym:ctip:<messageId>`）も、サーバーが
 > ノードでオンチェーン TX を検証してから記録します（クライアント申告だけでは解除・記録されません）。
 
 ## 通知
