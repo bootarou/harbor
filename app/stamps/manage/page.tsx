@@ -24,7 +24,7 @@ export default async function StampManagePage() {
       imageUrl: true,
       price: true,
       published: true,
-      _count: { select: { purchases: true, placements: true } },
+      _count: { select: { purchases: true, placements: true, communityMessages: true } },
     },
   });
 
@@ -67,7 +67,7 @@ export default async function StampManagePage() {
                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                   {formatXym(Number(s.price))} XYM・
                   {s.published ? "公開中" : "非公開"}・購入 {s._count.purchases}・
-                  貼付 {s._count.placements}
+                  使用 {s._count.placements + s._count.communityMessages}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2 text-sm">

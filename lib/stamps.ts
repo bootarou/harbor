@@ -7,7 +7,7 @@ export type StampCardData = {
   description: string | null;
   imageUrl: string;
   price: number;
-  placements: number;
+  usage: number; // 使用回数（記事貼付＋チャット添付の合計）
   author: { id: string; displayName: string | null; xymAddress: string | null };
 };
 
@@ -29,9 +29,14 @@ type StampRow = {
   description: string | null;
   imageUrl: string;
   price: unknown;
-  _count: { placements: number };
+  createdAt: Date;
+  _count: { placements: number; communityMessages: number };
   author: { id: string; displayName: string | null; xymAddress: string | null };
 };
+
+function usageOf(s: StampRow): number {
+  return s._count.placements + s._count.communityMessages;
+}
 
 function toCard(s: StampRow): StampCardData {
   return {
@@ -40,7 +45,7 @@ function toCard(s: StampRow): StampCardData {
     description: s.description,
     imageUrl: s.imageUrl,
     price: Number(s.price),
-    placements: s._count.placements,
+    usage: usageOf(s),
     author: s.author,
   };
 }
@@ -51,21 +56,38 @@ const CARD_SELECT = {
   description: true,
   imageUrl: true,
   price: true,
-  _count: { select: { placements: true } },
+  createdAt: true,
+  // 使用回数＝記事貼付＋チャット添付。人気順の集計に使う。
+  _count: { select: { placements: true, communityMessages: true } },
   author: { select: { id: true, displayName: true, xymAddress: true } },
 } as const;
 
-// ショップ用: 公開中スタンプ一覧（新着順 or 人気順＝貼付数順・作者フィルタ）。
+// ショップ用: 公開中スタンプ一覧（新着順 or 人気順＝使用回数順・作者フィルタ）。
+// 人気順は「記事貼付＋チャット」の合算のため、Prisma の orderBy では表現できず JS 側で並べ替える。
 export async function getShopStamps(opts: {
   sort?: "new" | "popular";
   authorId?: string;
 }): Promise<StampCardData[]> {
+  const where = {
+    published: true,
+    ...(opts.authorId ? { authorId: opts.authorId } : {}),
+  };
+  if (opts.sort === "popular") {
+    const rows = await prisma.stamp.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: CARD_SELECT,
+      take: 500, // 合算ソートの母集団（十分大きめ）
+    });
+    rows.sort(
+      (a, b) =>
+        usageOf(b) - usageOf(a) || b.createdAt.getTime() - a.createdAt.getTime()
+    );
+    return rows.slice(0, 120).map(toCard);
+  }
   const rows = await prisma.stamp.findMany({
-    where: { published: true, ...(opts.authorId ? { authorId: opts.authorId } : {}) },
-    orderBy:
-      opts.sort === "popular"
-        ? [{ placements: { _count: "desc" } }, { createdAt: "desc" }]
-        : { createdAt: "desc" },
+    where,
+    orderBy: { createdAt: "desc" },
     select: CARD_SELECT,
     take: 120,
   });
