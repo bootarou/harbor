@@ -9,6 +9,7 @@ import { getPlaceableStamps } from "@/lib/stamps";
 import { absoluteUrl } from "@/lib/site";
 import { ChatRoom } from "@/components/community/chat-room";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
+import { ShareButtons } from "@/components/share-buttons";
 
 export async function generateMetadata({
   params,
@@ -143,6 +144,14 @@ export default async function TopicPage({
           </div>
         )}
       </header>
+
+      {/* SNS 共有（このトピックのURL） */}
+      <div className="mb-4">
+        <ShareButtons
+          url={absoluteUrl(`/community/${topic.id}`)}
+          title={`${topic.name}｜Harbor コミュニティ`}
+        />
+      </div>
 
       {topic.archived && (
         <p className="mb-4 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
