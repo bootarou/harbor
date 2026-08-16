@@ -44,12 +44,15 @@ export class ImageValidationError extends Error {}
  */
 async function processImage(
   input: Buffer,
-  format: ImageFormat
+  format: ImageFormat,
+  maxDimension: number = MAX_DIMENSION
 ): Promise<{ buffer: Buffer; contentType: string }> {
-  // GIF はアニメーションを保持するため全フレームを読み込む。
-  const pipeline = sharp(input, { animated: format === "gif" }).resize({
-    width: MAX_DIMENSION,
-    height: MAX_DIMENSION,
+  // GIF/WebP はアニメーションを保持するため全フレームを読み込む。
+  const pipeline = sharp(input, {
+    animated: format === "gif" || format === "webp",
+  }).resize({
+    width: maxDimension,
+    height: maxDimension,
     fit: "inside",
     withoutEnlargement: true,
   });
@@ -101,7 +104,11 @@ function getS3Client(): S3Client {
  * @param file ブラウザから受け取った File（multipart/form-data）
  * @param prefix キーの接頭辞（例: "avatars", "posts"）
  */
-export async function saveImage(file: File, prefix: string): Promise<string> {
+export async function saveImage(
+  file: File,
+  prefix: string,
+  maxDimension: number = MAX_DIMENSION
+): Promise<string> {
   const format = ALLOWED_MIME.get(file.type);
   if (!format) {
     throw new ImageValidationError(
@@ -117,11 +124,11 @@ export async function saveImage(file: File, prefix: string): Promise<string> {
 
   const input = Buffer.from(await file.arrayBuffer());
 
-  // 大きい画像は長辺 2000px 以内へリサイズし、形式ごとに再エンコードして圧縮する。
+  // 長辺 maxDimension 以内へリサイズし、形式ごとに再エンコードして圧縮する。
   let bytes: Buffer;
   let contentType: string;
   try {
-    const processed = await processImage(input, format);
+    const processed = await processImage(input, format, maxDimension);
     bytes = processed.buffer;
     contentType = processed.contentType;
   } catch {

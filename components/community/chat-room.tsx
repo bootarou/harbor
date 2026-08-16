@@ -83,7 +83,11 @@ export function ChatRoom({
   const [stampOpen, setStampOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, startSending] = useTransition();
+  // 添付画像（アップロード済みURL）と、その処理状態。
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [imgUploading, setImgUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // 重複を避けつつ新着を末尾に追加する。
   const appendMessages = useCallback((incoming: CommunityMessageView[]) => {
@@ -151,17 +155,45 @@ export function ChatRoom({
 
   function send() {
     const text = body.trim();
-    if (!text) return;
+    const image = pendingImage;
+    if (!text && !image) return; // 本文も画像も無ければ送らない
     setError(null);
     startSending(async () => {
-      const res = await postMessage(topicId, text);
+      const res = await postMessage(topicId, text, undefined, image ?? undefined);
       if (res.ok) {
         appendMessages([res.message]);
         setBody("");
+        setPendingImage(null);
       } else {
         setError(res.error);
       }
     });
+  }
+
+  // 画像を選択→アップロード（長辺500pxへ縮小・圧縮）→添付候補にする。
+  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setImgUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/community/upload`, { method: "POST", body: fd });
+      const data = (await res.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      if (!res.ok || !data?.url) {
+        setError(data?.error ?? "画像のアップロードに失敗しました");
+        return;
+      }
+      setPendingImage(data.url);
+    } catch {
+      setError("画像のアップロードに失敗しました");
+    } finally {
+      setImgUploading(false);
+    }
   }
 
   // 投げ銭成功時に該当メッセージの合計を更新（カウントアップ・アニメで反映）。
@@ -316,6 +348,16 @@ export function ChatRoom({
                         {linkify(m.body)}
                       </p>
                     )}
+                    {m.imageUrl && (
+                      <a href={m.imageUrl} target="_blank" rel="noopener noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={m.imageUrl}
+                          alt="添付画像"
+                          className="max-h-64 max-w-[250px] rounded-lg border border-gray-200 object-contain dark:border-gray-800"
+                        />
+                      </a>
+                    )}
                     {m.stamp && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -352,15 +394,60 @@ export function ChatRoom({
                 {error}
               </p>
             )}
-            <div className="flex items-end gap-2">
+            {/* 添付画像プレビュー */}
+            {(pendingImage || imgUploading) && (
+              <div className="mb-2 flex items-center gap-2">
+                {imgUploading ? (
+                  <span className="text-xs text-gray-500">画像を処理中…</span>
+                ) : (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pendingImage as string}
+                      alt="添付プレビュー"
+                      className="h-16 w-16 rounded-md border border-gray-200 object-cover dark:border-gray-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPendingImage(null)}
+                      className="text-xs text-gray-500 underline"
+                    >
+                      画像を外す
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {/* 入力・添付・送信を1つの角丸バーに一体化 */}
+            <div className="flex items-end gap-1 rounded-2xl border border-gray-300 bg-white px-1.5 py-1.5 transition focus-within:border-teal-500 dark:border-gray-700 dark:bg-gray-900">
               <button
                 type="button"
                 onClick={() => setStampOpen((v) => !v)}
                 title="スタンプを送る"
-                className="flex shrink-0 items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
+                aria-label="スタンプを送る"
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 ${
+                  stampOpen ? "bg-gray-100 dark:bg-gray-800" : ""
+                }`}
               >
-                🎨 <span>スタンプ</span>
+                🎨<span className="hidden sm:inline">スタンプ</span>
               </button>
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={imgUploading}
+                title="画像を添付"
+                aria-label="画像を添付"
+                className="flex shrink-0 items-center gap-1 rounded-full px-2 py-1.5 text-sm text-gray-600 transition hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                📷<span className="hidden sm:inline">画像</span>
+              </button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={onPickImage}
+                className="hidden"
+              />
               <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
@@ -373,15 +460,32 @@ export function ChatRoom({
                 rows={1}
                 maxLength={2000}
                 placeholder="メッセージを入力（⌘/Ctrl+Enterで送信）"
-                className="max-h-32 flex-1 resize-y rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                className="max-h-32 min-h-[2.25rem] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
               />
               <button
                 type="button"
                 onClick={send}
-                disabled={sending || body.trim().length === 0}
-                className="shrink-0 rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-white dark:text-black"
+                disabled={sending || (body.trim().length === 0 && !pendingImage)}
+                title="送信"
+                aria-label="送信"
+                className="flex shrink-0 items-center justify-center rounded-full bg-black px-3 py-1.5 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-40 sm:px-4 dark:bg-white dark:text-black dark:hover:bg-gray-200"
               >
-                {sending ? "送信中..." : "送信"}
+                {/* スマホ: 上矢印アイコンのみ。sm以上: 「送信」テキスト */}
+                <span className="hidden sm:inline">{sending ? "…" : "送信"}</span>
+                <svg
+                  className="h-5 w-5 sm:hidden"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 19V5M5 12l7-7 7 7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             </div>
 

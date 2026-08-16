@@ -110,7 +110,8 @@ export type PostMessageResult =
 export async function postMessage(
   topicId: string,
   bodyRaw: string,
-  stampIdRaw?: string
+  stampIdRaw?: string,
+  imageUrlRaw?: string
 ): Promise<PostMessageResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "ログインしてください。" };
@@ -119,6 +120,7 @@ export async function postMessage(
   const parsed = communityMessageSchema.safeParse({
     body: bodyRaw,
     stampId: stampIdRaw ?? "",
+    imageUrl: imageUrlRaw ?? "",
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "入力を確認してください" };
@@ -157,18 +159,22 @@ export async function postMessage(
     stampId = reqStampId;
   }
 
-  // 本文もスタンプも無ければ投稿しない（本文がタグのみでサニタイズ後に空になった場合など）。
-  if (!body && !stampId) {
-    return { ok: false, error: "メッセージかスタンプを入力してください" };
+  // 添付画像（アップロードAPIが返した自ドメイン/ストレージのURLのみ・保存時に縮小圧縮済み）。
+  const imageUrl = parsed.data.imageUrl ? parsed.data.imageUrl : null;
+
+  // 本文もスタンプも画像も無ければ投稿しない（本文がタグのみでサニタイズ後に空になった場合など）。
+  if (!body && !stampId && !imageUrl) {
+    return { ok: false, error: "メッセージ・スタンプ・画像のいずれかを入力してください" };
   }
 
   const created = await prisma.communityMessage.create({
-    data: { topicId, userId, body, stampId },
+    data: { topicId, userId, body, stampId, imageUrl },
     select: {
       id: true,
       body: true,
       createdAt: true,
       userId: true,
+      imageUrl: true,
       tipTotal: true,
       tipCount: true,
       user: {

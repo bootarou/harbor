@@ -12,6 +12,7 @@ export type CommunityMessageView = {
   user: { id: string; displayName: string | null; avatarUrl: string | null };
   authorAddress: string | null; // 投稿者の受取アドレス（投げ銭の送金先・null なら投げ銭不可）
   stamp: { id: string; name: string; imageUrl: string } | null;
+  imageUrl: string | null; // 添付画像（任意）
   tipTotal: number;
   tipCount: number;
 };
@@ -21,6 +22,7 @@ const MESSAGE_SELECT = {
   body: true,
   createdAt: true,
   userId: true,
+  imageUrl: true,
   tipTotal: true,
   tipCount: true,
   user: { select: { id: true, displayName: true, avatarUrl: true, xymAddress: true } },
@@ -32,6 +34,7 @@ type MessageRow = {
   body: string;
   createdAt: Date;
   userId: string;
+  imageUrl: string | null;
   tipTotal: unknown;
   tipCount: number;
   user: {
@@ -52,6 +55,7 @@ export function shapeMessage(m: MessageRow): CommunityMessageView {
     user: { id: m.user.id, displayName: m.user.displayName, avatarUrl: m.user.avatarUrl },
     authorAddress: m.user.xymAddress,
     stamp: m.stamp,
+    imageUrl: m.imageUrl,
     tipTotal: Number(m.tipTotal),
     tipCount: m.tipCount,
   };

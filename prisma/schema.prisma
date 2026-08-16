@@ -478,6 +478,7 @@ model CommunityMessage {
   body      String         @db.Text
   stampId   String? // 添付スタンプ（任意）
   stamp     Stamp?         @relation(fields: [stampId], references: [id], onDelete: SetNull)
+  imageUrl  String? // 添付画像（任意・保存時に長辺500pxへ縮小・圧縮済み）
   hidden    Boolean        @default(false) // 通報による非表示（DBには残す・物理削除の対象外）
   deletedAt DateTime? // 投稿者/トピック作成者による論理削除（チャットから非表示・記録/収益は保持）
   tipTotal  Decimal        @default(0) // 投げ銭合計（表示用の非正規化・確定投げ銭で加算）

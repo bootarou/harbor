@@ -186,10 +186,15 @@ export const communityMessageSchema = z
       .optional()
       .or(z.literal("")),
     stampId: z.string().min(1).optional().or(z.literal("")),
+    imageUrl: imageUrl.optional().or(z.literal("")),
   })
-  .refine((d) => (d.body && d.body.length > 0) || (d.stampId && d.stampId.length > 0), {
-    message: "メッセージかスタンプを入力してください",
-  });
+  .refine(
+    (d) =>
+      (d.body && d.body.length > 0) ||
+      (d.stampId && d.stampId.length > 0) ||
+      (d.imageUrl && d.imageUrl.length > 0),
+    { message: "メッセージ・スタンプ・画像のいずれかを入力してください" }
+  );
 
 export type CommunityMessageInput = z.infer<typeof communityMessageSchema>;
 
