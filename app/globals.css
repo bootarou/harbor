@@ -53,3 +53,16 @@ article :is(h1, h2, h3)[id] {
 @media (prefers-reduced-motion: reduce) {
   .stamp-float { animation: none; display: none; }
 }
+
+/* トップのコミュニティ・ティッカー（横スクロール。items を2回描画して -50% でシームレスループ） */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker-scroll 45s linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; }
+}

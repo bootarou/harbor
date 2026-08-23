@@ -93,6 +93,67 @@ export async function getMessagesAfter(
   return rows.map(shapeMessage);
 }
 
+export type CommunityTickerItem = {
+  topicId: string;
+  topicName: string;
+  iconUrl: string | null;
+  userName: string | null;
+  userAvatar: string | null;
+  snippet: string;
+};
+
+// トップページのティッカー用: アクティブな各トピックの最新メッセージ1件。
+// 最終投稿が新しい順。表示可能なメッセージ（hidden=false・deletedAt=null）を持つトピックのみ。
+export async function getCommunityTicker(limit = 20): Promise<CommunityTickerItem[]> {
+  const topics = await prisma.communityTopic.findMany({
+    where: {
+      archived: false,
+      messages: { some: { hidden: false, deletedAt: null } },
+    },
+    orderBy: { lastPostedAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      name: true,
+      iconUrl: true,
+      messages: {
+        where: { hidden: false, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          body: true,
+          stampId: true,
+          imageUrl: true,
+          user: { select: { displayName: true, avatarUrl: true } },
+        },
+      },
+    },
+  });
+  const items: CommunityTickerItem[] = [];
+  for (const t of topics) {
+    const m = t.messages[0];
+    if (!m) continue;
+    const snippet = m.body
+      ? m.body.length > 40
+        ? `${m.body.slice(0, 40)}…`
+        : m.body
+      : m.stampId
+        ? "🎨 スタンプ"
+        : m.imageUrl
+          ? "📷 画像"
+          : "";
+    items.push({
+      topicId: t.id,
+      topicName: t.name,
+      iconUrl: t.iconUrl,
+      userName: m.user.displayName,
+      userAvatar: m.user.avatarUrl,
+      snippet,
+    });
+  }
+  return items;
+}
+
 // 表示中（窓）のメッセージの投げ銭合計スナップショット。既存メッセージへの投げ銭を
 // 差分ポーリングで反映するために使う（新着メッセージの after 差分では拾えないため）。
 export async function getTipTotalsForVisible(

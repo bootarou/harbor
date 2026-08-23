@@ -10,6 +10,8 @@ import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
 import { getHomeHighlights } from "@/lib/home";
 import { getTipRateStats } from "@/lib/tip-rate";
 import { getUndiscoveredPosts } from "@/lib/undiscovered";
+import { getCommunityTicker } from "@/lib/community";
+import { CommunityTicker } from "@/components/top/community-ticker";
 
 function buildQuery(opts: { q?: string; tag?: string }): string {
   const sp = new URLSearchParams();
@@ -61,8 +63,15 @@ export default async function Home({
 
   const filtering = q !== "" || tag !== "";
 
-  const [{ posts, hasMore }, total, tagRows, highlights, tipRate, encounters] =
-    await Promise.all([
+  const [
+    { posts, hasMore },
+    total,
+    tagRows,
+    highlights,
+    tipRate,
+    encounters,
+    communityTicker,
+  ] = await Promise.all([
       getPostsPage({ page: 1, q, tag }),
       filtering ? prisma.post.count({ where: buildPostWhere({ q, tag }) }) : Promise.resolve(0),
       // タグナビ用（公開中の記事のタグを集計）
@@ -73,6 +82,8 @@ export default async function Home({
       filtering ? Promise.resolve(null) : getTipRateStats(),
       // 今日の出会い（未灯記事のランダム5件・絞り込み中は不要）
       filtering ? Promise.resolve(null) : getUndiscoveredPosts({ limit: 5 }),
+      // コミュニティ・ティッカー（絞り込み中は不要）
+      filtering ? Promise.resolve([]) : getCommunityTicker(20),
     ]);
 
   // 上位タグ
@@ -93,6 +104,9 @@ export default async function Home({
       {!filtering && encounters && (
         <TodaysEncounters initial={encounters} currentUserId={me} />
       )}
+
+      {/* コミュニティ新着ティッカー（横スクロール・絞り込み中は非表示） */}
+      {!filtering && <CommunityTicker items={communityTicker} />}
 
       <h1 className="mb-6 text-2xl font-bold">記事一覧</h1>
 
