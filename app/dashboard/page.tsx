@@ -68,10 +68,10 @@ export default async function DashboardPage() {
           {posts.map((post) => (
             <li
               key={post.id}
-              className="flex items-center justify-between gap-4 py-4"
+              className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
             >
-              <div className="min-w-0">
-                <p className="truncate font-medium">{post.title}</p>
+              <div className="w-full min-w-0">
+                <p className="line-clamp-2 font-medium break-words">{post.title}</p>
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   {(() => {
                     const scheduled =
@@ -101,7 +101,7 @@ export default async function DashboardPage() {
                   更新: {formatDate(post.updatedAt)}・👁 {post.viewCount}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm sm:shrink-0">
                 <Link
                   href={`/posts/${post.id}`}
                   className="rounded-md border border-gray-300 px-3 py-1.5 transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
