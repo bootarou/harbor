@@ -248,6 +248,72 @@ docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
 > 手順5は必ず**別回線**で試してください。同じ LAN 内だと UDP がルーターを
 > 経由しないため、ポート開放の不備に気づけません。
 
+### 既存環境を音声対応に更新する
+
+すでに稼働している環境に音声を足す場合の手順です。**`git pull` と
+`docker compose up -d --build` だけでは音声は動きません**（音声スタックが別プロジェクト
+のため）。段階的に進めることを推奨します。
+
+> **DB について**: 音声機能はデータモデルを追加していないため、マイグレーションの
+> 心配は不要です（`entrypoint.sh` の `prisma db push` は冪等で、変更が無ければ何もしません）。
+
+**Phase A — コードだけ先に反映（音声は無効のまま）**
+
+`.env` に `LIVEKIT_*` を設定しなければ音声パネルは非表示のままなので、
+まずここまでで既存機能に影響が無いか確認できます。**従来どおりの更新手順です。**
+
+```bash
+git pull
+docker compose -p <既存のプロジェクト名> up -d --build
+```
+
+**Phase B — インフラ作業**（コマンドではない）
+
+[Step 1](#step-1-dns-レコードを作る) の DNS と [Step 2](#step-2-ルーターでポートを開放する) の
+ポート開放を行います。あわせて**ホストの 80/443 が空いている**ことを確認してください。
+
+**Phase C — 音声スタックを起動**（アプリより先に）
+
+[Step 4](#step-4-音声スタックの設定ファイルを作る)・[Step 5](#step-5-音声スタックを起動する) の手順です。
+証明書が2ドメイン分取得できてから次へ進みます。
+
+**Phase D — 各環境の `.env` を設定し、オーバーレイ付きで再起動**
+
+[Step 6](#step-6-各環境のアプリ設定を書く) の内容を `.env` に書いたうえで:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
+  -p <既存のプロジェクト名> up -d --build
+```
+
+> **注意点**
+> - **プロジェクト名（`-p`）は既存と同じものを使う**こと。変えると別スタックが二重に作られます
+>   （現在の名前は `docker ps` の `<プロジェクト名>-app-1` で確認できます）
+> - **順序が重要**。Phase C を先に実行しないと `harbor-voice` ネットワークが無く Phase D が失敗します
+> - **Phase D 以降は毎回オーバーレイが必要**。素の `docker compose up -d` に戻すと
+>   アプリがネットワークから外れ、発言権の付与が失敗します
+
+### 環境変数を変更したときに再ビルドが要るか
+
+`LIVEKIT_*` は `NEXT_PUBLIC_*` ではないため基本的には実行時変数ですが、
+**`LIVEKIT_WS_URL` だけは例外**です。
+
+Next.js は `next.config.ts` の `headers()` の結果を**ビルド時に
+`routes-manifest.json` へ焼き込み**、実行時には再評価しません。`LIVEKIT_WS_URL` は
+CSP の `connect-src` に使われるため、ビルド時にも渡す必要があります
+（`docker-compose.yml` の `app.build.args` に入れてあります）。
+
+ただし **CSP は `wss:` を包括的に許可**しているため（`connect-src` は既に `https:` を
+許可済みで、実質的な緩和にはならない）、**本番のように `wss://` を使う構成なら
+ドメインを変えても再ビルドは不要**です。再ビルドが要るのは、ローカル検証で
+平文の `ws://` を使う場合だけです。
+
+| 変更した変数 | 必要な操作 |
+|---|---|
+| `LIVEKIT_API_KEY` / `_SECRET` / `_API_URL` | 再起動のみ |
+| `LIVEKIT_WS_URL`（`wss://`） | 再起動のみ |
+| `LIVEKIT_WS_URL`（`ws://`・ローカル検証） | **再ビルド** |
+
 ---
 
 ## 5. ローカル環境での単独テスト
@@ -261,15 +327,43 @@ mixed content 制限の対象外なので **`ws://` がそのまま使えます*
 > （セキュアコンテキストと見なされないため）。スマホからの実機確認は
 > HTTPS 環境が必要です。
 
-### Step 1. LiveKit をローカルで起動する
+アプリの動かし方によって手順が変わります。
 
-設定ファイルなしで、コンテナ1つだけで動きます。UDP も**1ポートに多重化**するので
-レンジ開放は不要です。
+- **A. `npm run dev`（ホストで直接）** … 下の 5-A
+- **B. `docker compose`（コンテナ）** … 下の 5-B ← 接続先の書き方が変わるので注意
+
+### 共通 Step 1. 鍵を決める
+
+**`.env` に既に `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` がある場合は、その値をそのまま使います。**
+LiveKit サーバー側にも同じ鍵を教える必要があるためです。
+
+> ⚠️ **よくある失敗**: `.env` の鍵と LiveKit サーバーに渡した鍵が食い違うと、
+> 参加時に「音声スペースに接続できませんでした」になります。サーバーのログには
+> `invalid API key` が出ます。必ず同じ値にしてください。
+>
+> ```bash
+> docker logs harbor-livekit-local | grep "invalid API key"
+> ```
+
+まだ鍵が無ければ生成します（シークレットは32文字以上）。
 
 ```bash
+openssl rand -hex 16   # KEY
+openssl rand -hex 16   # SECRET（32文字になる）
+```
+
+### 共通 Step 2. LiveKit をローカルで起動する
+
+設定ファイルなしで、コンテナ1つだけで動きます。UDP も**1ポートに多重化**するので
+レンジ開放は不要です。`.env` の鍵をそのまま読ませます。
+
+```bash
+KEY=$(grep '^LIVEKIT_API_KEY=' .env | cut -d= -f2- | tr -d '"'"'"' ')
+SECRET=$(grep '^LIVEKIT_API_SECRET=' .env | cut -d= -f2- | tr -d '"'"'"' ')
+
 docker run -d --name harbor-livekit-local \
   -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
-  -e LIVEKIT_KEYS="devkey: devsecret_local_only_at_least_32_chars" \
+  -e LIVEKIT_KEYS="${KEY}: ${SECRET}" \
   livekit/livekit-server:latest --dev --node-ip 127.0.0.1 --udp-port 7882
 ```
 
@@ -287,30 +381,81 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:7880/   # → 200
 ```
 
 > `--dev` はログレベルを debug にするだけで、**鍵は自動設定されません**。
-> 上記のように `LIVEKIT_KEYS` で明示的に渡してください（`キー: シークレット` 形式）。
-> シークレットは32文字以上にします。
+> 上記のように `LIVEKIT_KEYS`（`キー: シークレット` 形式）で明示的に渡してください。
 
-### Step 2. `.env` に4行足す
+---
 
-ローカル用の値です。**この鍵はローカル専用**なので、本番の鍵とは別物にしてください。
+### 5-A. `npm run dev` で動かす場合
+
+`.env` に次の2行を足します（鍵は Step 1 のものが既に入っている前提）。
 
 ```bash
-LIVEKIT_API_KEY=devkey
-LIVEKIT_API_SECRET=devsecret_local_only_at_least_32_chars
 LIVEKIT_WS_URL=ws://localhost:7880
 LIVEKIT_API_URL=http://localhost:7880
 ```
 
-ローカルでは LiveKit がホストのポートに直接出ているので、`LIVEKIT_API_URL` は
-`http://localhost:7880` でかまいません（コンテナ名は使いません）。
-
-### Step 3. 開発サーバーを起動する
+アプリがホストで直接動くので、どちらも `localhost` で届きます。
 
 ```bash
 npm run dev
 ```
 
-### Step 4. 確認する
+---
+
+### 5-B. `docker compose` で動かす場合
+
+コンテナから見た `localhost` は**コンテナ自身**を指すため、`LIVEKIT_API_URL` に
+`localhost` は**使えません**。LiveKit を同じ Docker ネットワークに入れて、
+**コンテナ名で参照**します。
+
+**① LiveKit をアプリと同じネットワークに参加させる**
+
+```bash
+# プロジェクト名が nagexym の場合、ネットワークは nagexym_default
+docker network connect nagexym_default harbor-livekit-local
+```
+
+（`docker inspect <アプリのコンテナ名> --format '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}'`
+でネットワーク名を確認できます）
+
+**② `.env` に次の2行を足す**
+
+```bash
+LIVEKIT_WS_URL=ws://localhost:7880                  # ブラウザ（ホスト上）から見た値
+LIVEKIT_API_URL=http://harbor-livekit-local:7880    # コンテナから見た値
+```
+
+> **2つの URL は「見る主体」が違うので値も違います。**
+>
+> | 変数 | 誰が使う | 値 |
+> |---|---|---|
+> | `LIVEKIT_WS_URL` | ブラウザ（ホスト上） | `ws://localhost:7880` |
+> | `LIVEKIT_API_URL` | app コンテナ（内部） | `http://harbor-livekit-local:7880` |
+
+**③ 再ビルドして起動する**
+
+```bash
+docker compose -p <プロジェクト名> up -d --build
+```
+
+> **`--build` は必須です。** 音声機能を含む新しいコードをイメージに入れる必要があります。
+> また `LIVEKIT_WS_URL` は CSP に使われる**ビルド時変数**でもあります（詳細は下の注記）。
+
+**疎通確認**
+
+```bash
+docker exec <アプリのコンテナ名> node -e "
+const {RoomServiceClient}=require('livekit-server-sdk');
+new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET)
+ .listRooms().then(r=>console.log('OK', r.length)).catch(e=>console.log('NG', e.message));
+"
+```
+
+`OK 0` が出れば、鍵とネットワークの両方が正しい状態です。
+
+---
+
+### Step 3. 確認する
 
 1. ログインし、`/community/new` でトピックを作る（未作成の場合）
 2. そのトピックを開き、上部に「🎙 音声スペース」パネルが出ることを確認
@@ -318,10 +463,7 @@ npm run dev
 4. 「🎙 発言する」→ マイク許可を承認 → 自分のチップが 🔊 になり、
    声を出すと**枠が緑に光る**（発言中アニメーション）
 
-ここまで確認できれば、トークン発行・発言権付与・マイク publish の
-一連の流れが動いています。
-
-### Step 5.（任意）2人での通話を確認する
+### Step 4.（任意）2人での通話を確認する
 
 音声が実際に相手へ届くかまで確認したい場合は、**同じ PC の2つのブラウザプロファイル**を
 使います。どちらも `localhost` なのでマイクが使え、実際に声のやり取りができます。
@@ -339,15 +481,14 @@ npm run dev
 docker rm -f harbor-livekit-local
 ```
 
-`.env` に足した `LIVEKIT_*` の4行も、使わないなら空にするか削除してください
-（`LIVEKIT_WS_URL` を空にすれば音声スペースは非表示に戻ります）。
+`.env` の `LIVEKIT_WS_URL` を空にすれば、音声スペースは非表示に戻ります。
 
 ### ローカルで詰まったときは
 
-- **パネルが出ない** → `.env` の3つ（KEY / SECRET / WS_URL）が揃っているか確認し、
-  **dev サーバーを再起動**する
-- **接続できない** → `docker ps` で `harbor-livekit-local` が動いているか、
-  `curl http://localhost:7880/` が 200 を返すか確認
+- **パネルが出ない** → `.env` の3つ（KEY / SECRET / WS_URL）が揃っているか確認。
+  Docker の場合は**イメージが古い**可能性が高いので `--build` を付けて再ビルドする
+- **「接続できませんでした」** → まず `docker logs harbor-livekit-local` を見る。
+  `invalid API key` なら鍵の不一致（共通 Step 1 参照）
 - **参加はできるが声が届かない** → UDP 7882 が塞がれている可能性。
   LiveKit は TCP 7881 へフォールバックするので、7881 も公開しているか確認
 - **WSL2 で音声が不安定** → Windows のブラウザから WSL2 内の Docker へ UDP を

@@ -36,6 +36,9 @@ services:
         NEXT_PUBLIC_S3_PUBLIC_URL: ${NEXT_PUBLIC_S3_PUBLIC_URL:-}
         # Web Push 公開鍵（ビルド時にクライアントへ焼き込む）
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+        # CSP(connect-src) に使われる。headers() はビルド時に焼き込まれるため build 時にも必要。
+        # ws://（ローカル検証）を使う場合のみ必須。wss:// なら CSP が包括許可するので不要。
+        LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-}
     restart: unless-stopped
     depends_on:
       db:

@@ -5,6 +5,12 @@ const isDev = process.env.NODE_ENV !== "production";
 // LiveKit（コミュニティの音声スペース）への接続先を CSP に許可する。
 // LIVEKIT_WS_URL は ws(s)://host:7880 形式。WebSocket に加え、livekit-client が
 // 同ホストへ投げる HTTP リクエスト（接続検証など）も通す必要があるため両方を列挙する。
+//
+// 【重要】Next.js は headers() の結果を **ビルド時に routes-manifest.json へ焼き込む**。
+// 実行時には再評価されないため、ここで参照する env は build 引数として渡す必要がある
+// （docker-compose.yml の app.build.args を参照）。
+// ただし本番は wss:// のため、下の connect-src が wss: を包括的に許可しており
+// ドメイン変更だけなら再ビルドは不要。ここでの列挙は ws://（ローカル検証）用。
 // ※ 音声メディア自体は WebRTC(UDP) なので CSP の対象外。
 // ※ Cloudflare Tunnel を経由させない直結の想定（UDP 50000-50100 / 7880 / 7881 を開放）。
 function livekitCspOrigins(): string[] {
@@ -38,7 +44,11 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https:${livekitOrigins.length ? ` ${livekitOrigins.join(" ")}` : ""}${isDev ? " ws:" : ""}`,
+  // wss: は https: と同じ広さ（どちらも任意ホスト）で、既に https: を許可済みのため
+  // 実質的な緩和にはならない。これにより LiveKit のドメイン変更で再ビルドが要らなくなる。
+  // ws:（平文）は包括許可せず、LIVEKIT_WS_URL に ws:// を設定したときだけ
+  // そのオリジンを個別に許可する（ローカル検証用）。
+  `connect-src 'self' https: wss:${livekitOrigins.length ? ` ${livekitOrigins.join(" ")}` : ""}${isDev ? " ws:" : ""}`,
   // YouTube / TikTok 埋め込み（外部URL投稿）を許可。frame-src 未指定だと default-src 'self' で iframe がブロックされる。
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com https://www.tiktok.com",
   "frame-ancestors 'none'",

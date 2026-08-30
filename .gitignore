@@ -30,6 +30,8 @@ yarn-error.log*
 .env*.local
 # 音声スタック（docker-compose.voice.yml）用。実鍵を含むため追跡しない。
 .env.voice
+# .env の手動バックアップ（秘密情報を含むため追跡しない）
+.env.bak*
 
 # vercel
 .vercel
