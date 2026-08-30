@@ -6,10 +6,13 @@ import { prisma } from "@/lib/prisma";
 import { getTopicMessages } from "@/lib/community";
 import { touchPresence, getActiveViewers } from "@/lib/community/presence";
 import { getPlaceableStamps } from "@/lib/stamps";
-import { isVoiceEnabled } from "@/lib/livekit";
+import {
+  getLivekitConfig,
+  listVoiceParticipantViews,
+  type VoiceParticipantView,
+} from "@/lib/livekit";
 import { absoluteUrl } from "@/lib/site";
 import { ChatRoom } from "@/components/community/chat-room";
-import { VoiceSpace } from "@/components/community/voice-space";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
 import { ShareButtons } from "@/components/share-buttons";
 
@@ -102,8 +105,13 @@ export default async function TopicPage({
     avatarUrl: v.avatarUrl,
   }));
 
-  // LiveKit が設定されている環境でのみ音声スペースを出す。
-  const voiceEnabled = isVoiceEnabled();
+  // LiveKit が設定されている環境でのみ、入力バーに音声行を出す。
+  // 初期表示ぶんの参加者もここで取る（以後はメッセージ差分ポーリングが更新する）。
+  const livekit = getLivekitConfig();
+  const voiceEnabled = livekit !== null;
+  const initialVoice: VoiceParticipantView[] = livekit
+    ? await listVoiceParticipantViews(livekit, topicId)
+    : [];
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
@@ -164,11 +172,6 @@ export default async function TopicPage({
         </p>
       )}
 
-      {/* 音声スペース（LiveKit）。LIVEKIT_* 未設定の環境では表示しない。 */}
-      {voiceEnabled && (
-        <VoiceSpace topicId={topic.id} canJoin={currentUserId !== null} />
-      )}
-
       <ChatRoom
         topicId={topic.id}
         initialMessages={messages}
@@ -176,6 +179,8 @@ export default async function TopicPage({
         isTopicAuthor={isTopicAuthor}
         placeableStamps={placeableStamps}
         initialOnline={initialOnline}
+        voiceEnabled={voiceEnabled}
+        initialVoice={initialVoice}
       />
     </main>
   );

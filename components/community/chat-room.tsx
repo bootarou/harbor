@@ -17,8 +17,10 @@ import {
 import type { CommunityMessageView } from "@/lib/community";
 import type { OnlineViewer } from "@/lib/community/presence";
 import type { PlaceableStamp } from "@/lib/stamps";
+import type { VoiceParticipantView } from "@/lib/livekit";
 import { CommunityTipButton } from "@/components/community/community-tip-button";
 import { TipTotal } from "@/components/community/tip-total";
+import { VoiceSpace } from "@/components/community/voice-space";
 
 const POLL_MS = 45_000;
 
@@ -69,6 +71,8 @@ export function ChatRoom({
   isTopicAuthor,
   placeableStamps,
   initialOnline,
+  voiceEnabled,
+  initialVoice,
 }: {
   topicId: string;
   initialMessages: CommunityMessageView[];
@@ -76,9 +80,14 @@ export function ChatRoom({
   isTopicAuthor: boolean;
   placeableStamps: PlaceableStamp[];
   initialOnline: OnlineViewer[];
+  /** LIVEKIT_* が設定された環境でのみ音声行を出す。 */
+  voiceEnabled: boolean;
+  /** 音声スペースの参加者（初期表示用。以後はポーリングで更新）。 */
+  initialVoice: VoiceParticipantView[];
 }) {
   const [messages, setMessages] = useState<CommunityMessageView[]>(initialMessages);
   const [online, setOnline] = useState<OnlineViewer[]>(initialOnline);
+  const [voice, setVoice] = useState<VoiceParticipantView[]>(initialVoice);
   const [body, setBody] = useState("");
   const [stampOpen, setStampOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,9 +123,12 @@ export function ChatRoom({
         messages: CommunityMessageView[];
         online: OnlineViewer[];
         tips?: Record<string, { tipTotal: number; tipCount: number }>;
+        voice?: VoiceParticipantView[];
       };
       appendMessages(data.messages);
       setOnline(data.online);
+      // 音声スペースの参加者（未参加でも「いま誰がいるか」が見えるように）。
+      if (data.voice) setVoice(data.voice);
       // 既存メッセージへの投げ銭増加をスナップショットで反映。
       if (data.tips) {
         const tips = data.tips;
@@ -418,8 +430,16 @@ export function ChatRoom({
                 )}
               </div>
             )}
-            {/* 入力・添付・送信を1つの角丸バーに一体化 */}
-            <div className="flex items-end gap-1 rounded-2xl border border-gray-300 bg-white px-1.5 py-1.5 transition focus-within:border-teal-500 dark:border-gray-700 dark:bg-gray-900">
+            {/* 音声＋入力を1つの角丸バーに2段で一体化 */}
+            <div className="rounded-2xl border border-gray-300 bg-white transition focus-within:border-teal-500 dark:border-gray-700 dark:bg-gray-900">
+              {/* 上段: 音声スペース（参加者を横スクロール表示） */}
+              {voiceEnabled && (
+                <div className="border-b border-gray-200 px-2.5 py-1.5 dark:border-gray-800">
+                  <VoiceSpace topicId={topicId} participants={voice} />
+                </div>
+              )}
+              {/* 下段: 添付・入力・送信 */}
+              <div className="flex items-end gap-1 px-1.5 py-1.5">
               <button
                 type="button"
                 onClick={() => setStampOpen((v) => !v)}
@@ -486,7 +506,8 @@ export function ChatRoom({
                     strokeLinejoin="round"
                   />
                 </svg>
-              </button>
+                </button>
+              </div>
             </div>
 
             {/* スタンプ選択ポップアップ（購入済みのみ） */}

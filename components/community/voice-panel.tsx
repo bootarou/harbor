@@ -16,10 +16,23 @@ import {
   useLocalParticipant,
   useParticipants,
 } from "@livekit/components-react";
-import type { VoiceParticipantMetadata } from "@/lib/livekit";
+import type {
+  VoiceParticipantMetadata,
+  VoiceParticipantView,
+} from "@/lib/livekit";
 
-// 音声スペース本体。livekit-client / @livekit/components-react を使うため
-// voice-space.tsx から ssr:false で読み込まれる（サーバー側では評価しない）。
+// 音声スペースの行。チャット入力バーの「上の段」に常時表示し、
+// 未参加でも「いま誰が音声にいるか」が見えるようにする（横スクロール）。
+// livekit-client / @livekit/components-react を使うため voice-space.tsx から
+// ssr:false で読み込まれる（サーバー側では評価しない）。
+//
+// 参加者の取得元は状態で切り替える:
+//   未参加 … messages ポーリングに相乗りしたサーバー側スナップショット（props）
+//   参加中 … LiveKit から届くリアルタイム情報（useParticipants）
+//
+// アイコンは状態で切り替える。既定は「聴講者」なので入口は 🎧（聴く）にし、
+// 🎙（マイク）は実際に発言権を得たときだけ出す。入口をマイクにすると
+// 「話さないといけない」と誤解されて参加自体を敬遠されるため。
 
 type TokenResponse = {
   token: string;
@@ -68,13 +81,74 @@ function waitForPublishPermission(
   });
 }
 
-export function VoicePanel({
+// 行の右端に置く操作ボタンの基本クラス。
+const ROW_BUTTON =
+  "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
+
+// 行の左端ラベル（アイコン＋「音声」）。
+function RowLabel({ icon }: { icon: string }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+      <span aria-hidden="true">{icon}</span>
+      <span className="hidden sm:inline">ライブトーク</span>
+    </span>
+  );
+}
+
+// 参加者チップ（横スクロールの1件）。live=LiveKit接続中のリアルタイム表示。
+function Chip({
+  displayName,
+  avatarUrl,
+  isSpeaker,
+  isSelf,
+  speaking,
+}: {
+  displayName: string | null;
+  avatarUrl: string | null;
+  isSpeaker: boolean;
+  isSelf: boolean;
+  speaking?: boolean;
+}) {
+  return (
+    <li
+      className={`flex shrink-0 items-center gap-1 rounded-full py-0.5 pl-0.5 pr-2 text-xs transition ${
+        speaking
+          ? "bg-green-100 ring-2 ring-green-500 dark:bg-green-900/40"
+          : "bg-gray-100 dark:bg-gray-800"
+      }`}
+      title={`${displayName ?? "（無名）"}${isSpeaker ? "（発言できる）" : "（聴講中）"}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={avatarUrl || "/avatar-placeholder.svg"}
+        alt=""
+        className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
+      />
+      <span className="max-w-[6rem] truncate">
+        {displayName ?? "（無名）"}
+        {isSelf ? "（あなた）" : ""}
+      </span>
+      <span aria-hidden="true">{isSpeaker ? "🎙" : "🎧"}</span>
+    </li>
+  );
+}
+
+// 参加者が0人のときの案内。
+function EmptyHint() {
+  return (
+    <span className="text-xs text-gray-400 dark:text-gray-500">
+      まだ誰もいません
+    </span>
+  );
+}
+
+export function VoiceDock({
   topicId,
-  canJoin,
+  participants: snapshot,
 }: {
   topicId: string;
-  /** ログイン中か。未ログインなら参加ボタンの代わりに案内を出す。 */
-  canJoin: boolean;
+  /** 未参加時に表示する参加者（messages ポーリング由来のスナップショット）。 */
+  participants: VoiceParticipantView[];
 }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [maxSpeakers, setMaxSpeakers] = useState(5);
@@ -96,34 +170,34 @@ export function VoicePanel({
     if (joining || room) return;
     setError(null);
     setJoining(true);
-    let next: Room | null = null;
+    let pending: Room | null = null;
     try {
       const res = await fetch(`/api/community/${topicId}/voice-token`);
       const data = (await res.json().catch(() => null)) as
         | (Partial<TokenResponse> & { error?: string })
         | null;
       if (!res.ok || !data?.token || !data.wsUrl) {
-        setError(data?.error ?? "音声スペースに接続できませんでした");
+        setError(data?.error ?? "ライブトークに接続できませんでした");
         return;
       }
       if (typeof data.maxSpeakers === "number") setMaxSpeakers(data.maxSpeakers);
       const created = new Room({ adaptiveStream: false, dynacast: false });
-      next = created;
+      pending = created;
       // サーバー側から切断された（別タブでの参加・権限失効など）場合に状態を戻す。
       created.once(RoomEvent.Disconnected, () => {
         setRoom((cur) => (cur === created ? null : cur));
       });
       await created.connect(data.wsUrl, data.token);
       setRoom(created);
-      next = null;
+      pending = null;
     } catch (e) {
       console.error("voice join error", e);
       setError(
-        "音声スペースに接続できませんでした（サーバーの設定・ネットワークをご確認ください）"
+        "ライブトークに接続できませんでした（サーバーの設定・ネットワークをご確認ください）"
       );
     } finally {
       // connect に失敗した Room は破棄する。
-      if (next) void next.disconnect();
+      if (pending) void pending.disconnect();
       setJoining(false);
     }
   }, [joining, room, topicId]);
@@ -147,62 +221,67 @@ export function VoicePanel({
     }
   }, [room, topicId]);
 
+  if (room) {
+    return (
+      <RoomContext.Provider value={room}>
+        {/* 受信した音声を再生する（このコンポーネントが <audio> を管理する） */}
+        <RoomAudioRenderer />
+        <VoiceRowConnected
+          topicId={topicId}
+          maxSpeakers={maxSpeakers}
+          onLeave={leave}
+        />
+      </RoomContext.Provider>
+    );
+  }
+
+  // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
-    <section className="mb-4 rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-medium">
-          🎙 音声スペース
-        </h2>
-        {room ? (
-          <button
-            type="button"
-            onClick={() => void leave()}
-            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
-          >
-            退出
-          </button>
-        ) : canJoin ? (
-          <button
-            type="button"
-            onClick={() => void join()}
-            disabled={joining}
-            className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white transition hover:bg-gray-700 disabled:opacity-50 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
-          >
-            {joining ? "接続中…" : "参加する"}
-          </button>
+    <div className="flex items-center gap-2">
+      <RowLabel icon="🎧" />
+      <ul className="flex flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+        {snapshot.length === 0 ? (
+          <EmptyHint />
         ) : (
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            ログインすると参加できます
-          </span>
+          snapshot.map((p) => (
+            <Chip
+              key={p.userId}
+              displayName={p.displayName}
+              avatarUrl={p.avatarUrl}
+              isSpeaker={p.isSpeaker}
+              isSelf={false}
+            />
+          ))
         )}
-      </div>
-
+      </ul>
       {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <span className="shrink-0 text-xs text-red-600 dark:text-red-400">
+          {error}
+        </span>
       )}
-
-      {room ? (
-        <RoomContext.Provider value={room}>
-          {/* 受信した音声を再生する（このコンポーネントが <audio> を管理する） */}
-          <RoomAudioRenderer />
-          <VoiceRoomBody topicId={topicId} maxSpeakers={maxSpeakers} />
-        </RoomContext.Provider>
-      ) : (
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          参加すると、このトピックの音声スペースで話したり聴いたりできます。
-        </p>
-      )}
-    </section>
+      <button
+        type="button"
+        onClick={() => void join()}
+        disabled={joining}
+        title="ライブトークに参加（聴くだけでもOK）"
+        aria-label="ライブトークに参加。聴くだけでも参加できます"
+        className={`${ROW_BUTTON} bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200`}
+      >
+        {joining ? "接続中…" : "参加"}
+      </button>
+    </div>
   );
 }
 
-// 接続後の中身（参加者一覧・発言ボタン）。RoomContext 配下でのみ使う。
-function VoiceRoomBody({
+// 接続後の行。参加者はリアルタイム表示になり、発言・退出の操作が出る。
+function VoiceRowConnected({
   topicId,
   maxSpeakers,
+  onLeave,
 }: {
   topicId: string;
   maxSpeakers: number;
+  onLeave: () => void | Promise<void>;
 }) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
@@ -216,7 +295,7 @@ function VoiceRoomBody({
   ).length;
   const full = !canPublish && speakers >= maxSpeakers;
 
-  // 発言権を得たらマイクON、返したらOFF（権限変更はサーバー→LiveKit 経由で届く）。
+  // 発言権を失ったらマイクを確実に落とす（権限変更はサーバー→LiveKit 経由で届く）。
   useEffect(() => {
     if (canPublish) return;
     if (localParticipant.isMicrophoneEnabled) {
@@ -272,48 +351,68 @@ function VoiceRoomBody({
   }
 
   return (
-    <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-        <span>
-          参加中: {participants.length}人 ・ スピーカー {speakers}/{maxSpeakers}
-        </span>
-        {connectionState !== ConnectionState.Connected && (
-          <span className="text-amber-600 dark:text-amber-400">再接続中…</span>
-        )}
-        <button
-          type="button"
-          onClick={() => void toggleSpeaker()}
-          disabled={pending || full}
-          title={full ? "スピーカーが満員です" : undefined}
-          className={`rounded-md px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-            canPublish
-              ? "bg-red-600 text-white hover:bg-red-500"
-              : "border border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-900"
-          }`}
-        >
-          {canPublish ? "🔇 聴講に戻る" : full ? "🎙 満員です" : "🎙 発言する"}
-        </button>
-      </div>
-
-      {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
-      )}
-
-      <ul className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className="flex items-center gap-2">
+      <RowLabel icon={canPublish ? "🎙" : "🎧"} />
+      <ul className="flex flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
         {participants.map((p) => (
-          <ParticipantChip
+          <LiveChip
             key={p.identity || p.sid}
             participant={p}
             isSelf={p.identity === localParticipant.identity}
           />
         ))}
       </ul>
+
+      {connectionState !== ConnectionState.Connected && (
+        <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
+          再接続中…
+        </span>
+      )}
+      {error && (
+        <span
+          className="max-w-[14rem] shrink-0 truncate text-xs text-red-600 dark:text-red-400"
+          title={error}
+        >
+          {error}
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={() => void toggleSpeaker()}
+        disabled={pending || full}
+        title={
+          full
+            ? "発言できる人数が上限に達しています"
+            : canPublish
+              ? "マイクを切って聴講に戻る"
+              : `発言する（${speakers}/${maxSpeakers}人）`
+        }
+        className={`${ROW_BUTTON} ${
+          canPublish
+            ? "bg-red-600 text-white hover:bg-red-500"
+            : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+        }`}
+      >
+        {canPublish
+          ? "🎧 聴講に戻る"
+          : full
+            ? "満員"
+            : `🎙 発言 ${speakers}/${maxSpeakers}`}
+      </button>
+      <button
+        type="button"
+        onClick={() => void onLeave()}
+        className={`${ROW_BUTTON} border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800`}
+      >
+        退出
+      </button>
     </div>
   );
 }
 
-// 参加者ひとり分の表示。発言中はリング＋パルスで視覚的に示す。
-function ParticipantChip({
+// 接続中のリアルタイム参加者チップ（発言中の光り方を出せる）。
+function LiveChip({
   participant,
   isSelf,
 }: {
@@ -326,27 +425,12 @@ function ParticipantChip({
   const meta = readMetadata(participant);
 
   return (
-    <li
-      className={`flex items-center gap-1 rounded-full py-0.5 pl-0.5 pr-2 text-xs transition ${
-        speaking
-          ? "bg-green-100 ring-2 ring-green-500 dark:bg-green-900/40"
-          : "bg-gray-100 dark:bg-gray-800"
-      }`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={meta.avatarUrl || "/avatar-placeholder.svg"}
-        alt=""
-        className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
-      />
-      <span className="max-w-[9rem] truncate">
-        {displayNameOf(participant)}
-        {isSelf ? "（あなた）" : ""}
-      </span>
-      <span aria-hidden="true">{isSpeaker && micOn ? "🔊" : "🔇"}</span>
-      <span className="sr-only">
-        {isSpeaker && micOn ? "発言中" : "聴講中"}
-      </span>
-    </li>
+    <Chip
+      displayName={displayNameOf(participant)}
+      avatarUrl={meta.avatarUrl ?? null}
+      isSpeaker={isSpeaker && micOn}
+      isSelf={isSelf}
+      speaking={speaking}
+    />
   );
 }

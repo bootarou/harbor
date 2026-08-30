@@ -7,6 +7,13 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# OpenSSL が無いと Prisma が libssl のバージョンを検出できず openssl-1.1.x 版の
+# エンジンを落としてしまう。実行段は OpenSSL 3.0 なので合致せず、起動のたびに
+# binaries.prisma.sh から 3.0.x 版をダウンロードする羽目になる（起動が外部依存になる）。
+# ここで入れておけば npm ci の postinstall が正しい 3.0.x 版を取得する。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 # postinstall (prisma generate) が npm ci 中に走るため、スキーマ／設定を先に置く。
 # generate は DB へ接続しないが、設定読み込み用にダミーの DATABASE_URL を与える。
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
@@ -20,6 +27,10 @@ RUN npm ci
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# deps 段と同じ理由で OpenSSL が必要（prisma generate / schema-engine の事前取得）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # NEXT_PUBLIC_* はビルド時にクライアントバンドルへインライン化されるため、
 # 実行時ではなく build 引数として渡す必要がある。
@@ -52,6 +63,18 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # package.json の prebuild フックで prisma generate → next build
 RUN npm run build
+
+# schema-engine をビルド時に取得してイメージへ焼き込む。
+# prisma generate が落とすのは query engine だけで、起動時の `prisma db push` が使う
+# schema-engine は含まれない。そのままだと**コンテナ起動のたびに**
+# binaries.prisma.sh からダウンロードが走り、DNS/ネットワークが不安定だと
+# 起動に失敗して再起動ループに入る（実際に発生）。
+# migrate diff は DB 接続なしで schema-engine を使うため、これで取得だけ済ませる
+# （このステージの node_modules はそのまま実行イメージへコピーされる）。
+# deps 段で OpenSSL を入れてあるため、ここでは実行段と同じ openssl-3.0.x 版が
+# 取得・同梱される（起動時ダウンロードが不要になる）。
+# ネットワーク都合で失敗してもビルドは止めない（従来どおり実行時取得にフォールバック）。
+RUN npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > /dev/null || echo "[build] schema-engine の事前取得に失敗（実行時に取得されます）"
 
 ############################
 # 3) 実行

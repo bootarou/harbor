@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getMessagesAfter, getTipTotalsForVisible } from "@/lib/community";
 import { touchPresence, getActiveViewers } from "@/lib/community/presence";
+import { getLivekitConfig, listVoiceParticipantViews } from "@/lib/livekit";
 
 // トピックの新着メッセージ差分＋オンライン閲覧者を返す。閲覧は誰でも可。
 // ログイン中はプレゼンスを更新し、after があればそれ以降の hidden=false を昇順で返す。
@@ -46,5 +47,11 @@ export async function GET(
   // 表示中メッセージへの投げ銭合計スナップショット（既存メッセージのtip増加を反映）。
   const tips = await getTipTotalsForVisible(topicId);
 
-  return NextResponse.json({ messages, online, tips });
+  // 音声スペースの参加者。未参加の閲覧者にも「いま誰がいるか」を見せるため、
+  // 専用のポーリングを増やさずこの差分取得に相乗りさせる。
+  // LiveKit 未設定・応答不能なら空配列（listVoiceParticipants が握りつぶす）。
+  const cfg = getLivekitConfig();
+  const voice = cfg ? await listVoiceParticipantViews(cfg, topicId) : [];
+
+  return NextResponse.json({ messages, online, tips, voice });
 }

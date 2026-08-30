@@ -22,7 +22,7 @@ export async function POST(
   const cfg = getLivekitConfig();
   if (!cfg) {
     return NextResponse.json(
-      { error: "音声スペースは利用できません" },
+      { error: "ライブトークは利用できません" },
       { status: 503 }
     );
   }

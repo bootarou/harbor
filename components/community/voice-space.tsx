@@ -1,18 +1,23 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { VoiceParticipantView } from "@/lib/livekit";
 
-// 音声スペースの読み込み口。
+// 音声スペースの読み込み口。チャット入力バーの「上の段」に置く1行。
 // livekit-client / @livekit/components-react はブラウザ API 前提のため
 // ssr:false で動的読み込みし、初期バンドルにも載せない
 //（音声を使わない閲覧者に不要な JS を配らない）。
-const VoicePanel = dynamic(
-  () => import("./voice-panel").then((m) => m.VoicePanel),
+const VoiceDock = dynamic(
+  () => import("./voice-panel").then((m) => m.VoiceDock),
   {
     ssr: false,
+    // 読み込み中も行の高さを保ち、入力バーがガタつかないようにする。
     loading: () => (
-      <div className="mb-4 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
-        🎙 音声スペースを準備中…
+      <div className="flex items-center gap-2 py-0.5">
+        <span className="flex items-center gap-1 text-xs text-gray-400">
+          <span aria-hidden="true">🎧</span>
+          <span className="hidden sm:inline">ライブトーク</span>
+        </span>
       </div>
     ),
   }
@@ -20,10 +25,10 @@ const VoicePanel = dynamic(
 
 export function VoiceSpace({
   topicId,
-  canJoin,
+  participants,
 }: {
   topicId: string;
-  canJoin: boolean;
+  participants: VoiceParticipantView[];
 }) {
-  return <VoicePanel topicId={topicId} canJoin={canJoin} />;
+  return <VoiceDock topicId={topicId} participants={participants} />;
 }

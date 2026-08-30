@@ -140,6 +140,80 @@ function isSpeaker(p: ParticipantInfo): boolean {
   return p.permission?.canPublish === true;
 }
 
+/** 未参加の閲覧者にも見せる、音声スペースの参加者表示用データ。 */
+export type VoiceParticipantView = {
+  userId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  /** 発言権を持っている（マイクを持てる）か。 */
+  isSpeaker: boolean;
+};
+
+/** トークンに埋めた metadata を安全に読む（壊れていても落とさない）。 */
+function parseMetadata(raw: string | undefined): Partial<VoiceParticipantMetadata> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Partial<VoiceParticipantMetadata>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 参加者一覧を表示用に整形する。
+ * LiveKit に接続していない閲覧者にも「いま誰が音声にいるか」を見せるために使う
+ * （発言中かどうかはリアルタイム情報なので、接続中のクライアント側でのみ分かる）。
+ */
+export async function listVoiceParticipantViews(
+  cfg: LivekitConfig,
+  topicId: string
+): Promise<VoiceParticipantView[]> {
+  const participants = await listVoiceParticipants(cfg, topicId);
+  return participants.map((p) => {
+    const meta = parseMetadata(p.metadata);
+    return {
+      userId: p.identity,
+      displayName: meta.displayName ?? (p.name || null),
+      avatarUrl: meta.avatarUrl ?? null,
+      isSpeaker: p.permission?.canPublish === true,
+    };
+  });
+}
+
+// トピック一覧（/community）用の人数スナップショット。
+// listRooms() は1回の呼び出しで全ルームぶんが取れるため、トピックごとに
+// listParticipants を叩かずに済む。匿名の閲覧者からも叩かれる経路なので、
+// 短時間キャッシュして LiveKit への問い合わせが集中しないようにする。
+let roomCountCache: { at: number; counts: Record<string, number> } | null = null;
+const ROOM_COUNT_TTL = 5_000;
+
+/**
+ * いまライブトークに人がいるトピックの人数を返す（トピックID → 人数）。
+ * ルーム名は CommunityTopic.id なので、そのままキーとして使える。
+ * LiveKit が応答しない場合は直前のキャッシュ、無ければ空を返す（一覧は落とさない）。
+ */
+export async function listActiveVoiceRoomCounts(
+  cfg: LivekitConfig
+): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (roomCountCache && now - roomCountCache.at < ROOM_COUNT_TTL) {
+    return roomCountCache.counts;
+  }
+  try {
+    const rooms = await getRoomService(cfg).listRooms();
+    const counts: Record<string, number> = {};
+    for (const r of rooms) {
+      if (r.numParticipants > 0) counts[r.name] = r.numParticipants;
+    }
+    roomCountCache = { at: now, counts };
+    return counts;
+  } catch {
+    return roomCountCache?.counts ?? {};
+  }
+}
+
 /** ルームの参加者一覧（ルーム未作成なら空配列）。 */
 export async function listVoiceParticipants(
   cfg: LivekitConfig,
@@ -192,7 +266,7 @@ export async function setSpeaker(
     if (!me) {
       return {
         ok: false as const,
-        error: "音声スペースに参加していません",
+        error: "ライブトークに参加していません",
         status: 409,
       };
     }
