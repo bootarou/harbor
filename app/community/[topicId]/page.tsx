@@ -6,8 +6,10 @@ import { prisma } from "@/lib/prisma";
 import { getTopicMessages } from "@/lib/community";
 import { touchPresence, getActiveViewers } from "@/lib/community/presence";
 import { getPlaceableStamps } from "@/lib/stamps";
+import { isVoiceEnabled } from "@/lib/livekit";
 import { absoluteUrl } from "@/lib/site";
 import { ChatRoom } from "@/components/community/chat-room";
+import { VoiceSpace } from "@/components/community/voice-space";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
 import { ShareButtons } from "@/components/share-buttons";
 
@@ -100,6 +102,9 @@ export default async function TopicPage({
     avatarUrl: v.avatarUrl,
   }));
 
+  // LiveKit が設定されている環境でのみ音声スペースを出す。
+  const voiceEnabled = isVoiceEnabled();
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
       <nav className="mb-4 text-sm">
@@ -157,6 +162,11 @@ export default async function TopicPage({
         <p className="mb-4 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
           このトピックはアーカイブされています（投稿すると自動的に再開します）。
         </p>
+      )}
+
+      {/* 音声スペース（LiveKit）。LIVEKIT_* 未設定の環境では表示しない。 */}
+      {voiceEnabled && (
+        <VoiceSpace topicId={topic.id} canJoin={currentUserId !== null} />
       )}
 
       <ChatRoom

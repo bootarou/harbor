@@ -1,0 +1,17 @@
+# LiveKit サーバー設定（テストネット環境用）。
+# ${...} は docker compose から渡された環境変数で展開される。
+#
+# 重要: UDP/TCP のポート番号は docker のポートマッピングで付け替えられない。
+# LiveKit は ICE candidate に「自分が実際に listen しているポート」を書いて
+# ブラウザへ広告するため、メインネット側とは *この設定ファイル自体で* 値を分ける。
+port: 7880 # シグナリング（ホストには公開せず caddy が中継する）
+rtc:
+  tcp_port: 7882 # UDP が塞がれた環境向けのフォールバック
+  port_range_start: 50200 # 音声メディア（メインネットと重複させない）
+  port_range_end: 50300
+  # 自ノードの外部IPを自動検出させる（compose の --node-ip=auto と併用）。
+  use_external_ip: true
+keys:
+  ${LIVEKIT_API_KEY_TEST}: ${LIVEKIT_API_SECRET_TEST}
+logging:
+  level: info

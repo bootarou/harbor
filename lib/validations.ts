@@ -314,3 +314,10 @@ export const tipSchema = z.object({
 });
 
 export type TipInput = z.infer<typeof tipSchema>;
+
+// 音声スペースの発言権リクエスト（true=発言する / false=聴講に戻る）。
+export const voiceSpeakerSchema = z.object({
+  speak: z.boolean(),
+});
+
+export type VoiceSpeakerInput = z.infer<typeof voiceSpeakerSchema>;

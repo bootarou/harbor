@@ -2,6 +2,26 @@ import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// LiveKit（コミュニティの音声スペース）への接続先を CSP に許可する。
+// LIVEKIT_WS_URL は ws(s)://host:7880 形式。WebSocket に加え、livekit-client が
+// 同ホストへ投げる HTTP リクエスト（接続検証など）も通す必要があるため両方を列挙する。
+// ※ 音声メディア自体は WebRTC(UDP) なので CSP の対象外。
+// ※ Cloudflare Tunnel を経由させない直結の想定（UDP 50000-50100 / 7880 / 7881 を開放）。
+function livekitCspOrigins(): string[] {
+  const raw = process.env.LIVEKIT_WS_URL?.trim();
+  if (!raw) return [];
+  try {
+    const u = new URL(raw);
+    const httpScheme = u.protocol === "wss:" ? "https:" : "http:";
+    return [`${u.protocol}//${u.host}`, `${httpScheme}//${u.host}`];
+  } catch {
+    console.warn("LIVEKIT_WS_URL の形式が不正です（CSP に追加しません）:", raw);
+    return [];
+  }
+}
+
+const livekitOrigins = livekitCspOrigins();
+
 // Content Security Policy（仕様書 §6: XSS 対策 / CSP 設定）。
 // - script/style は Next.js のインライン bootstrap・next/font のため 'unsafe-inline' を許可。
 //   （nonce ベースのより厳格な CSP は将来の強化余地）
@@ -18,7 +38,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https:${isDev ? " ws:" : ""}`,
+  `connect-src 'self' https:${livekitOrigins.length ? ` ${livekitOrigins.join(" ")}` : ""}${isDev ? " ws:" : ""}`,
   // YouTube / TikTok 埋め込み（外部URL投稿）を許可。frame-src 未指定だと default-src 'self' で iframe がブロックされる。
   "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com https://www.tiktok.com",
   "frame-ancestors 'none'",
@@ -36,10 +56,11 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     // camera / nfc は同一オリジンのみ許可（ウォレットのQR読み取り・NFCタグで使用）。
+    // microphone はコミュニティの音声スペース（LiveKit）で使うため self のみ許可。
     // 既定でも nfc は self だが、意図を明示し将来の取りこぼしを防ぐため列挙する。
-    // microphone / geolocation は未使用のため全面禁止のまま。
+    // geolocation は未使用のため全面禁止のまま。
     key: "Permissions-Policy",
-    value: "camera=(self), nfc=(self), microphone=(), geolocation=()",
+    value: "camera=(self), nfc=(self), microphone=(self), geolocation=()",
   },
 ];
 

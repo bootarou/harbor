@@ -1,0 +1,25 @@
+# アプリ（testnet版 / mainnet版）を音声スタックの harbor-voice ネットワークに参加させる
+# オーバーレイ。app サーバーから LiveKit の管理API（発言権の付与・参加者一覧）を
+# コンテナ名で直接叩けるようにするためのもの。
+#
+#   使い方（先に docker-compose.voice.yml を起動しておくこと）:
+#     docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
+#       -p harbor-main up -d
+#
+#   各環境の .env には対応する接続先を設定する:
+#     mainnet: LIVEKIT_API_URL=http://livekit-main:7880
+#     testnet: LIVEKIT_API_URL=http://livekit-test:7880
+#
+# ※ ブラウザ→LiveKit は公開URL（LIVEKIT_WS_URL）を使うため、このネットワークとは無関係。
+# ※ これを重ねずに素の docker-compose.yml だけで起動すれば従来どおり音声なしで動く。
+
+services:
+  app:
+    networks:
+      - default
+      - voice
+
+networks:
+  voice:
+    external: true
+    name: harbor-voice

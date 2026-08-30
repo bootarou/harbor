@@ -74,6 +74,15 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       NEXT_PUBLIC_S3_PUBLIC_URL: ${NEXT_PUBLIC_S3_PUBLIC_URL:-}
+      # 音声チャット（LiveKit）。3つ揃ったときだけ音声スペースが有効になる。
+      # LiveKit 本体は別プロジェクト（docker-compose.voice.yml）で起動する。
+      # WS URL はブラウザが直接叩く公開URL、API URL は harbor-voice ネットワーク越しの内部接続先
+      # （例: http://livekit-main:7880 / http://livekit-test:7880）。
+      # app をそのネットワークに繋ぐには docker-compose.voice-app.yml を -f で重ねる。
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL:-}
+      LIVEKIT_API_URL: ${LIVEKIT_API_URL:-}
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:
