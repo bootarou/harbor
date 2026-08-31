@@ -51,8 +51,8 @@
      → Cloudflare Tunnel を通れない（UDP のため）。グローバルIPへ直接。
 
   Browser
-     ├── UDP 50000-50100 ──→ グローバルIP ──→ livekit-main
-     ├── UDP 50200-50300 ──→ グローバルIP ──→ livekit-test
+     ├── UDP 50000 ────────→ グローバルIP ──→ livekit-main
+     ├── UDP 50001 ────────→ グローバルIP ──→ livekit-test
      ├── TCP 7881 ─────────→ グローバルIP ──→ livekit-main（UDP不可時）
      └── TCP 7882 ─────────→ グローバルIP ──→ livekit-test（UDP不可時）
 ```
@@ -76,9 +76,15 @@ testnet と mainnet で分けるのは次の4点です。
 | | mainnet | testnet |
 |---|---|---|
 | ホスト名 | `livekit.example.com` | `livekit-test.example.com` |
-| UDP レンジ | 50000-50100 | 50200-50300 |
+| UDP ポート | 50000 | 50001 |
 | TCP フォールバック | 7881 | 7882 |
 | API 鍵 | `*_MAIN` | `*_TEST` |
+
+### 使用する LiveKit のバージョン
+
+本番構成では `latest` を使わず、動作確認済みの **`livekit/livekit-server:v1.13.6`**
+に固定しています（mainnet / testnet とも同一）。更新する際は両方を揃えて変更し、
+実機で疎通確認をやり直してください。
 
 ### コンテナ構成
 
@@ -161,8 +167,8 @@ openssl rand -hex 16   # SECRET 用（2つ・32文字になる）
 
 | ポート | プロトコル | 用途 |
 |---|---|---|
-| 50000-50100 | **UDP** | mainnet の音声メディア |
-| 50200-50300 | **UDP** | testnet の音声メディア |
+| 50000 | **UDP** | mainnet の音声メディア |
+| 50001 | **UDP** | testnet の音声メディア |
 | 7881 | TCP | mainnet のフォールバック（UDP が塞がれた利用者向け） |
 | 7882 | TCP | testnet のフォールバック |
 
@@ -171,8 +177,8 @@ UFW を使っている場合の例です。
 ```bash
 sudo ufw allow 7881/tcp
 sudo ufw allow 7882/tcp
-sudo ufw allow 50000:50100/udp
-sudo ufw allow 50200:50300/udp
+sudo ufw allow 50000/udp
+sudo ufw allow 50001/udp
 ```
 
 > Harbor 本体など**別用途で既に 80/443 を使っている場合は、それを閉じないでください。**
@@ -205,7 +211,28 @@ LIVEKIT_DOMAIN_TEST=livekit-test.example.com
 
 ```bash
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
-docker compose -p harbor-voice logs livekit-main | grep "starting LiveKit server"
+```
+
+起動ログで **node IP・TCP ポート・UDP レンジ**が意図どおりか確認します。
+
+```bash
+docker compose -p harbor-voice logs livekit-main | grep -E "starting LiveKit server|node IP|NAT1To1"
+docker compose -p harbor-voice logs livekit-test | grep -E "starting LiveKit server|node IP|NAT1To1"
+```
+
+期待する値:
+
+| | mainnet | testnet |
+|---|---|---|
+| `rtc.portTCP` | 7881 | 7882 |
+| `rtc.portUDP` | 50000 | 50001 |
+| `nodeIP` | **サーバーのグローバルIP** | 同左 |
+
+`nodeIP` がローカルIP（192.168.x.x 等）になっている場合は、
+[トラブルシューティング](#ice-candidate-にローカルipしか出ない)の手動指定モードへ。
+
+> UDP は1ポートに多重化しているため、起動は数秒で完了します。詳細は
+> [運用メモ](#udp-mux単一ポート多重化について)を参照してください。
 ```
 
 ### Step 5. cloudflared から LiveKit へ到達できるようにする
@@ -336,6 +363,31 @@ docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
 > 手順5は必ず**別回線**で試してください。同じ LAN 内だと UDP がルーターを
 > 経由しないため、ポート開放の不備に気づけません。
 
+#### 外部IPが ICE candidate に使われているか確認する
+
+LAN 外のスマートフォンを 4G/5G に切り替えてライブトークに参加し、
+PC 側の Chrome で `chrome://webrtc-internals` を開きます。
+
+該当の接続を選び、次を確認します。
+
+| 項目 | 期待値 |
+|---|---|
+| selected candidate pair | `succeeded` になっている |
+| remote candidate | **Harbor サーバーのグローバルIP**（自社回線） |
+| protocol | `udp`（`tcp` ならフォールバック動作） |
+
+**メディアの接続先が Cloudflare のIPになっていないこと**を必ず確認してください。
+Cloudflare のIPが出ている場合は構成が誤っています。メディアは Cloudflare を
+通さず、グローバルIPへ直接繋がるのが正しい状態です。
+
+```
+signaling : Browser → Cloudflare → Tunnel → LiveKit:7880
+media     : Browser → 自社回線のグローバルIP → LiveKit   ← Cloudflare を通らない
+```
+
+開発モードであれば、アプリのコンソールに出る `[livetalk] ICE 診断` でも
+同じ内容（protocol / local / remote candidate）を確認できます。
+
 ### 既存環境をライブトーク対応に更新する
 
 すでに稼働している環境に追加する場合の手順です。**`git pull` と
@@ -428,7 +480,7 @@ SECRET=$(grep '^LIVEKIT_API_SECRET=' .env | cut -d= -f2- | tr -d '"'"'"' ')
 docker run -d --name harbor-livekit-local \
   -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
   -e LIVEKIT_KEYS="${KEY}: ${SECRET}" \
-  livekit/livekit-server:latest --dev --node-ip 127.0.0.1 --udp-port 7882
+  livekit/livekit-server:v1.13.6 --dev --node-ip 127.0.0.1 --udp-port 7882
 ```
 
 | ポート | 用途 |
@@ -568,7 +620,7 @@ testnet または mainnet の片方だけで使う場合は、不要なほうを
 2. `livekit.testnet.yaml` は不要
 3. `.env.voice` の `*_TEST` 変数は不要
 4. Cloudflare Tunnel の ingress も1つだけ
-5. 開放するポートは `7881/TCP` と `50000-50100/UDP` のみ
+5. 開放するポートは `7881/TCP` と `50000/UDP` のみ
 
 ---
 
@@ -605,8 +657,8 @@ Cloudflare 経由で自分に戻る遠回りな経路になります。
 
 | ポート | 環境 | 用途 |
 |---|---|---|
-| 50000-50100/UDP | mainnet | 音声メディア |
-| 50200-50300/UDP | testnet | 音声メディア |
+| 50000/UDP | mainnet | 音声メディア（UDP mux で多重化） |
+| 50001/UDP | testnet | 音声メディア（UDP mux で多重化） |
 | 7881/TCP | mainnet | UDP 不可時のフォールバック |
 | 7882/TCP | testnet | UDP 不可時のフォールバック |
 
@@ -664,7 +716,7 @@ docker compose -p harbor-voice logs livekit-main | tail -30
 ②メディアの失敗です。**UDP ポートが開いていない**可能性が高いです。
 
 同一 LAN 内では成功して外部から失敗する場合、ほぼ確実にルーターの UDP 転送設定が
-原因です。`50000-50100/UDP`（testnet は `50200-50300/UDP`）を確認してください。
+原因です。`50000/UDP`（testnet は `50001/UDP`）を確認してください。
 
 **開発モードでは実際の経路をコンソールで確認できます。** 参加して数秒後に
 `[livetalk] ICE 診断` というログが出ます。
@@ -685,19 +737,32 @@ docker compose -p harbor-voice logs livekit-main | tail -30
 
 ### ICE candidate にローカルIPしか出ない
 
-`--node-ip=auto` の自動検出が NAT 構成によっては失敗します。`.env.voice` に
-サーバーのグローバルIPを明示してください。
+標準構成では LiveKit 自身にグローバルIPを検出させています
+（`livekit.*.yaml` の `use_external_ip: true`、`--node-ip` は指定しません）。
 
-```bash
-LIVEKIT_NODE_IP=203.0.113.10
+NAT 構成によっては自動検出が効かず、ローカルIP（192.168.x.x / 10.x.x.x /
+172.16-31.x.x）しか candidate に出ないことがあります。その場合のみ、
+**手動指定モード**へ切り替えてください。
+
+`livekit.mainnet.yaml` / `livekit.testnet.yaml` の `rtc:` を次のように変更します。
+
+```yaml
+rtc:
+  tcp_port: 7881
+  udp_port: 50000
+  use_external_ip: false        # ← true から false へ
+  node_ip: 203.0.113.10         # ← このサーバーのグローバルIP
 ```
+
+> **`use_external_ip: true` と `node_ip` を同時に有効にしないでください。**
+> 自動検出と手動指定が競合します。手動指定を使うときは必ず
+> `use_external_ip: false` にします。
+>
+> 固定IPでない場合、DDNS 更新のたびにこの値も更新が必要です。標準は自動検出です。
 
 ```bash
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
 ```
-
-> 固定IPでない場合は、DDNS 更新時にこの値も更新する必要があります。
-> 空にしておけば自動検出に戻ります。
 
 ### 「発言する」を押してもマイクが有効にならない
 
@@ -786,6 +851,40 @@ new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, 
   暗号化するため、直接接続でも内容は保護されます
 - ICE candidate には**サーバーのグローバルIP**が載ります。Cloudflare のIPが
   載る構成にしてはいけません（メディアが Cloudflare を経由してしまい繋がりません）
+
+### UDP mux（単一ポート多重化）について
+
+Harbor のライブトークは **LiveKit の UDP mux 機能**を使い、全参加者の WebRTC 通信を
+**1つの UDP ポート**へ多重化しています。
+
+```
+MAIN : UDP 50000
+TEST : UDP 50001
+```
+
+通常の LiveKit 構成では参加者ごとにポートレンジを使えますが、Docker 上で大量の
+UDP ポートを publish すると **publish 1ポートにつき `docker-proxy` が1プロセス**
+起動するため、現実的に運用できません。
+
+> 実測（5000ポート × 2環境 = 10,000ポート）: `docker compose up -d` が
+> **10分でタイムアウト**し、コンテナは `Created` のまま起動せず、
+> `docker-proxy` は2,600プロセスを超えてなお増加中でした。
+
+UDP mux なら publish は1ポートで済み、容量も落ちません。Docker デーモンの
+`userland-proxy` 設定変更や `network_mode: host` にも依存しない構成です。
+
+**設定上の注意**
+
+- `rtc.udp_port` を指定した場合、`rtc.port_range_start` / `rtc.port_range_end` は
+  **使用しません**（併記しない）
+- `livekit.*.yaml` の `udp_port` と `docker-compose.voice.yml` の publish は
+  必ず一致させてください（ICE candidate に実ポートが載るため、docker 側でずらせません）
+
+**将来の拡張余地**
+
+参加者数や packet/s が増えて Docker の NAT がボトルネックになった場合は、
+`network_mode: host` への移行を検討します（LiveKit 公式が本番で推奨している方式）。
+現構成では不要です。
 
 ### TURN について
 

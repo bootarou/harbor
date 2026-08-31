@@ -7,12 +7,16 @@
 port: 7880 # シグナリング（Internet へは出さず Cloudflare Tunnel から到達する）
 rtc:
   tcp_port: 7882 # UDP が塞がれた環境向けのフォールバック
-  port_range_start: 50200 # 音声メディア（メインネットと重複させない）
-  port_range_end: 50300
+  # UDP mux: 全参加者の WebRTC 通信を1ポートに多重化する。
+  # ポートレンジ方式だと Docker が publish 1ポートにつき docker-proxy を
+  # 1プロセス起動するため、数千ポートでは起動できない（実測で確認済み）。
+  # udp_port を指定した場合、port_range_start / port_range_end は使用しない。
+  udp_port: 50001 # 音声メディア（メインネットと重複させない）
   # 自ノードの外部IPを自動検出し ICE candidate に載せる。
   # シグナリングは Cloudflare 経由でも、メディアはここで広告される
   # **グローバルIPへ直接**繋がる。Cloudflare のIPを広告してはいけない。
-  # 自動検出でローカルIPしか出ない場合は .env.voice の LIVEKIT_NODE_IP を使う。
+  # 自動検出でローカルIPしか candidate に出ない環境では、この行を false にして
+  # 直下に `node_ip: <グローバルIP>` を書く（両方を同時に有効にしないこと）。
   use_external_ip: true
 keys:
   ${LIVEKIT_API_KEY_TEST}: ${LIVEKIT_API_SECRET_TEST}

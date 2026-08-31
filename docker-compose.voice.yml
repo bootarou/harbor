@@ -13,8 +13,12 @@
 # └──────────────────────────────────────────────────────────────┘
 #
 # ルーター/FW で Internet へ公開するのは **メディアだけ**:
-#   mainnet: 7881/TCP ＋ 50000-50100/UDP
-#   testnet: 7882/TCP ＋ 50200-50300/UDP
+#   mainnet: 7881/TCP ＋ 50000/UDP
+#   testnet: 7882/TCP ＋ 50001/UDP
+#
+# UDP は LiveKit の mux 機能で **1ポートに多重化**している（livekit.*.yaml の udp_port）。
+# ポートレンジ方式だと publish 1ポートにつき docker-proxy が1プロセス起動し、
+# 数千ポートでは起動できない（実測: 5000×2 で10分経っても起動せず）。
 # 80/443/7880 は LiveKit のためには一切開放しない。
 #
 # 7880（シグナリング）は 127.0.0.1 にだけ publish している。
@@ -24,14 +28,16 @@
 # 詳細は VOICE-SETUP.md を参照。
 #
 # ※ UDP/TCP のポートは docker のマッピングで付け替えできない（ICE candidate に
-#   実ポートが載るため）。値は livekit.*.yaml 側で分けてある。
+#   実ポートが載るため）。ここの publish と livekit.*.yaml の値は必ず一致させる。
+# ※ グローバルIPの検出は LiveKit 自身に任せる（livekit.*.yaml の use_external_ip: true）。
+#   --node-ip は指定しない。自動検出が効かない環境での手動指定手順は VOICE-SETUP.md 参照。
 # ※ redis は LiveKit を複数ノードで束ねるときの調整用。ここは環境ごとに独立した
 #   単一ノードなので不要のため置いていない。
 
 services:
   # --- メインネット環境用 LiveKit ---
   livekit-main:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.6
     restart: unless-stopped
     environment:
       # livekit.mainnet.yaml 内の ${...} に展開される。
@@ -41,19 +47,16 @@ services:
       # シグナリング: ループバックのみ（Internet へは出さない）。
       - "127.0.0.1:${LIVEKIT_MAIN_SIGNAL_PORT:-7880}:7880"
       # メディア: グローバルIPへ直接届く必要があるため 0.0.0.0 で公開。
-      - "7881:7881"
-      - "50000-50100:50000-50100/udp"
+      - "7881:7881/tcp"
+      - "50000:50000/udp"
     volumes:
       - ./livekit.mainnet.yaml:/livekit.yaml:ro
     command:
       - --config=/livekit.yaml
-      # NAT 配下でグローバルIPを自動検出させる。ローカルIPしか candidate に
-      # 出ない環境では .env.voice の LIVEKIT_NODE_IP にグローバルIPを設定する。
-      - --node-ip=${LIVEKIT_NODE_IP:-auto}
 
   # --- テストネット環境用 LiveKit ---
   livekit-test:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.6
     restart: unless-stopped
     environment:
       LIVEKIT_API_KEY_TEST: "${LIVEKIT_API_KEY_TEST:?LIVEKIT_API_KEY_TEST を設定してください}"
@@ -61,13 +64,12 @@ services:
     ports:
       # mainnet と衝突しないようホスト側だけ 7883 にずらす（コンテナ内は 7880）。
       - "127.0.0.1:${LIVEKIT_TEST_SIGNAL_PORT:-7883}:7880"
-      - "7882:7882"
-      - "50200-50300:50200-50300/udp"
+      - "7882:7882/tcp"
+      - "50001:50001/udp"
     volumes:
       - ./livekit.testnet.yaml:/livekit.yaml:ro
     command:
       - --config=/livekit.yaml
-      - --node-ip=${LIVEKIT_NODE_IP:-auto}
 
 networks:
   # 各環境のアプリ compose、および Docker 上の cloudflared から
