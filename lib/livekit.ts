@@ -3,6 +3,7 @@ import {
   AccessToken,
   RoomServiceClient,
   TrackSource,
+  TwirpError,
   type ParticipantInfo,
   type ParticipantPermission,
 } from "livekit-server-sdk";
@@ -104,12 +105,40 @@ export async function createVoiceToken(
   return at.toJwt();
 }
 
+/** LiveKit 管理APIのタイムアウト（秒）。SDK 既定の10秒では遅すぎる。 */
+const LIVEKIT_REQUEST_TIMEOUT_SEC = 2;
+
+/**
+ * LiveKit が落ちている/到達できないとき、リクエストのたびにタイムアウトを
+ * 待たされないようにするための一時停止。失敗したらこの時間だけ呼び出しを止め、
+ * 即座に空を返す（表示系の機能なので、無いなら無いで描画を進めるほうがよい）。
+ */
+const LIVEKIT_FAILURE_BACKOFF_MS = 30_000;
+let livekitDownUntil = 0;
+
+/** 表示系の呼び出しを一時停止中か。 */
+function isLivekitBackingOff(): boolean {
+  return Date.now() < livekitDownUntil;
+}
+
+function noteLivekitFailure(): void {
+  livekitDownUntil = Date.now() + LIVEKIT_FAILURE_BACKOFF_MS;
+}
+
+function noteLivekitSuccess(): void {
+  livekitDownUntil = 0;
+}
+
 let cachedClient: { httpUrl: string; client: RoomServiceClient } | null = null;
 
 /** RoomServiceClient（設定ごとに使い回す）。 */
 export function getRoomService(cfg: LivekitConfig): RoomServiceClient {
   if (cachedClient && cachedClient.httpUrl === cfg.httpUrl) return cachedClient.client;
-  const client = new RoomServiceClient(cfg.httpUrl, cfg.apiKey, cfg.apiSecret);
+  // 既定のリクエストタイムアウトは10秒。LiveKit に到達できないとページ描画が
+  // まるごと10秒ブロックされるため、短く切って必ず速やかに諦めさせる。
+  const client = new RoomServiceClient(cfg.httpUrl, cfg.apiKey, cfg.apiSecret, {
+    requestTimeout: LIVEKIT_REQUEST_TIMEOUT_SEC,
+  });
   cachedClient = { httpUrl: cfg.httpUrl, client };
   return client;
 }
@@ -170,6 +199,8 @@ export async function listVoiceParticipantViews(
   cfg: LivekitConfig,
   topicId: string
 ): Promise<VoiceParticipantView[]> {
+  // 表示用なので、LiveKit が落ちている間は待たずに空で描画を進める。
+  if (isLivekitBackingOff()) return [];
   const participants = await listVoiceParticipants(cfg, topicId);
   return participants.map((p) => {
     const meta = parseMetadata(p.metadata);
@@ -187,7 +218,7 @@ export async function listVoiceParticipantViews(
 // listParticipants を叩かずに済む。匿名の閲覧者からも叩かれる経路なので、
 // 短時間キャッシュして LiveKit への問い合わせが集中しないようにする。
 let roomCountCache: { at: number; counts: Record<string, number> } | null = null;
-const ROOM_COUNT_TTL = 5_000;
+const ROOM_COUNT_TTL = 15_000;
 
 /**
  * いまライブトークに人がいるトピックの人数を返す（トピックID → 人数）。
@@ -201,6 +232,8 @@ export async function listActiveVoiceRoomCounts(
   if (roomCountCache && now - roomCountCache.at < ROOM_COUNT_TTL) {
     return roomCountCache.counts;
   }
+  // LiveKit が落ちている間は呼びに行かない（待たされるだけなので即座に諦める）。
+  if (isLivekitBackingOff()) return roomCountCache?.counts ?? {};
   try {
     const rooms = await getRoomService(cfg).listRooms();
     const counts: Record<string, number> = {};
@@ -208,8 +241,10 @@ export async function listActiveVoiceRoomCounts(
       if (r.numParticipants > 0) counts[r.name] = r.numParticipants;
     }
     roomCountCache = { at: now, counts };
+    noteLivekitSuccess();
     return counts;
   } catch {
+    noteLivekitFailure();
     return roomCountCache?.counts ?? {};
   }
 }
@@ -220,9 +255,18 @@ export async function listVoiceParticipants(
   topicId: string
 ): Promise<ParticipantInfo[]> {
   try {
-    return await getRoomService(cfg).listParticipants(voiceRoomName(topicId));
-  } catch {
-    // ルームがまだ存在しない場合などはエラーになる。参加者ゼロとして扱う。
+    const list = await getRoomService(cfg).listParticipants(voiceRoomName(topicId));
+    noteLivekitSuccess();
+    return list;
+  } catch (e) {
+    // ルームがまだ存在しない場合もここに来る。これは LiveKit が応答している証拠
+    // （TwirpError = HTTP 応答があった）なので、到達不能とは区別する。
+    // ここを取り違えると、空のルームを開くたびに30秒バックオフしてしまう。
+    if (e instanceof TwirpError) {
+      noteLivekitSuccess();
+    } else {
+      noteLivekitFailure();
+    }
     return [];
   }
 }
