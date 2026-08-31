@@ -4,7 +4,7 @@
 # 重要: UDP/TCP のポート番号は docker のポートマッピングで付け替えられない。
 # LiveKit は ICE candidate に「自分が実際に listen しているポート」を書いて
 # ブラウザへ広告するため、メインネット側とは *この設定ファイル自体で* 値を分ける。
-port: 7880 # シグナリング（Internet へは出さず Cloudflare Tunnel から到達する）
+port: 7883 # シグナリング（Internet へは出さず Cloudflare Tunnel から到達する）
 rtc:
   tcp_port: 7882 # UDP が塞がれた環境向けのフォールバック
   # UDP mux: 全参加者の WebRTC 通信を1ポートに多重化する。
@@ -18,6 +18,7 @@ rtc:
   # 自動検出でローカルIPしか candidate に出ない環境では、この行を false にして
   # 直下に `node_ip: <グローバルIP>` を書く（両方を同時に有効にしないこと）。
   use_external_ip: true
+  advertise_internal_ip: true
 keys:
   ${LIVEKIT_API_KEY_TEST}: ${LIVEKIT_API_SECRET_TEST}
 logging:

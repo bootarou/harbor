@@ -39,16 +39,10 @@ services:
   livekit-main:
     image: livekit/livekit-server:v1.13.6
     restart: unless-stopped
+    network_mode: host
     environment:
       # livekit.mainnet.yaml 内の ${...} に展開される。
-      LIVEKIT_API_KEY_MAIN: "${LIVEKIT_API_KEY_MAIN:?LIVEKIT_API_KEY_MAIN を設定してください}"
-      LIVEKIT_API_SECRET_MAIN: "${LIVEKIT_API_SECRET_MAIN:?LIVEKIT_API_SECRET_MAIN を設定してください}"
-    ports:
-      # シグナリング: ループバックのみ（Internet へは出さない）。
-      - "127.0.0.1:${LIVEKIT_MAIN_SIGNAL_PORT:-7880}:7880"
-      # メディア: グローバルIPへ直接届く必要があるため 0.0.0.0 で公開。
-      - "7881:7881/tcp"
-      - "50000:50000/udp"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY_MAIN}: ${LIVEKIT_API_SECRET_MAIN}"
     volumes:
       - ./livekit.mainnet.yaml:/livekit.yaml:ro
     command:
@@ -58,14 +52,9 @@ services:
   livekit-test:
     image: livekit/livekit-server:v1.13.6
     restart: unless-stopped
+    network_mode: host
     environment:
-      LIVEKIT_API_KEY_TEST: "${LIVEKIT_API_KEY_TEST:?LIVEKIT_API_KEY_TEST を設定してください}"
-      LIVEKIT_API_SECRET_TEST: "${LIVEKIT_API_SECRET_TEST:?LIVEKIT_API_SECRET_TEST を設定してください}"
-    ports:
-      # mainnet と衝突しないようホスト側だけ 7883 にずらす（コンテナ内は 7880）。
-      - "127.0.0.1:${LIVEKIT_TEST_SIGNAL_PORT:-7883}:7880"
-      - "7882:7882/tcp"
-      - "50001:50001/udp"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY_TEST}: ${LIVEKIT_API_SECRET_TEST}"
     volumes:
       - ./livekit.testnet.yaml:/livekit.yaml:ro
     command:

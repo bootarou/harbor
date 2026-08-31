@@ -18,6 +18,7 @@ rtc:
   # 自動検出でローカルIPしか candidate に出ない環境では、この行を false にして
   # 直下に `node_ip: <グローバルIP>` を書く（両方を同時に有効にしないこと）。
   use_external_ip: true
+  advertise_internal_ip: true
 keys:
   ${LIVEKIT_API_KEY_MAIN}: ${LIVEKIT_API_SECRET_MAIN}
 logging:
