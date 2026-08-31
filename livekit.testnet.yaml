@@ -1,5 +1,6 @@
 # LiveKit サーバー設定（テストネット環境用）。
-# ${...} は docker compose から渡された環境変数で展開される。
+# API キーはこのファイルに書かず、compose から環境変数 LIVEKIT_KEYS で渡す
+# （`キー: シークレット` 形式）。設定ファイルに鍵を持たせない。
 #
 # 重要: UDP/TCP のポート番号は docker のポートマッピングで付け替えられない。
 # LiveKit は ICE candidate に「自分が実際に listen しているポート」を書いて
@@ -19,7 +20,5 @@ rtc:
   # 直下に `node_ip: <グローバルIP>` を書く（両方を同時に有効にしないこと）。
   use_external_ip: true
   advertise_internal_ip: true
-keys:
-  ${LIVEKIT_API_KEY_TEST}: ${LIVEKIT_API_SECRET_TEST}
 logging:
   level: info
