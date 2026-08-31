@@ -42,42 +42,55 @@
                         Cloudflare        Cloudflare
                           Tunnel            Tunnel
                               ▼                ▼
-                      livekit-main:7880  livekit-test:7880
+                      localhost:7880    localhost:7883
 
   ① シグナリング（誰がどの部屋にいるかの制御・WSS）
      → Cloudflare Tunnel を通る。ポート開放も証明書も不要。
 
   ② 音声メディア（実際の声・WebRTC）
-     → Cloudflare Tunnel を通れない（UDP のため）。グローバルIPへ直接。
+     → Cloudflare Tunnel を通れない（UDP のため）。サーバーへ直接。
 
-  Browser
-     ├── UDP 50000 ────────→ グローバルIP ──→ livekit-main
-     ├── UDP 50001 ────────→ グローバルIP ──→ livekit-test
-     ├── TCP 7881 ─────────→ グローバルIP ──→ livekit-main（UDP不可時）
-     └── TCP 7882 ─────────→ グローバルIP ──→ livekit-test（UDP不可時）
+  Browser ──┬── UDP 50000 / TCP 7881 ──→ LiveKit MAIN
+            └── UDP 50001 / TCP 7882 ──→ LiveKit TEST
+
+     LAN 内から     → サーバーの LAN アドレス（例 192.168.0.x）
+     インターネットから → サーバーのグローバルIP
 ```
 
 **Internet へ公開するのはメディアだけです。**
 
 | | Internet へ公開 | 経路 |
 |---|---|---|
-| シグナリング 7880/TCP | **しない** | Cloudflare Tunnel からのみ到達 |
-| メディア UDP | する | グローバルIPへ直接 |
-| TCP フォールバック | する | グローバルIPへ直接 |
+| シグナリング 7880 / 7883 | **しない** | Cloudflare Tunnel からのみ |
+| メディア UDP 50000 / 50001 | する | サーバーへ直接 |
+| TCP フォールバック 7881 / 7882 | する | サーバーへ直接 |
 | 80 / 443 | **LiveKit のためには不要** | — |
 
 TLS 終端は Cloudflare Edge が担当するため、リバースプロキシ（Caddy 等）も
 Let's Encrypt の証明書取得も**必要ありません**。
 
-### 環境ごとに分けるもの
+### LiveKit は host ネットワークで動かします
 
-testnet と mainnet で分けるのは次の4点です。
+LiveKit の2コンテナは **`network_mode: host`** で起動します（LiveKit 公式が本番で
+推奨している方式）。Docker の bridge と NAT を経由しないため、
+**サーバーの LAN アドレスとグローバルIPの両方**を ICE candidate に載せられます。
+
+`advertise_internal_ip: true` と併せることで、**LAN 内の PC からも外部の
+スマートフォンからも**同じルームに繋がります。
+
+> 詳しい経緯は[なぜ host ネットワークなのか](#なぜ-host-ネットワークなのか)を参照。
+
+### ポート割り当て（環境ごとに分離）
+
+host ネットワークでは2つの LiveKit がホストの同じネットワークを共有するため、
+**すべてのポートを環境間で重複させられません**。
 
 | | mainnet | testnet |
 |---|---|---|
+| シグナリング | **7880** | **7883** |
+| WebRTC UDP | 50000 | 50001 |
+| WebRTC TCP フォールバック | 7881 | 7882 |
 | ホスト名 | `livekit.example.com` | `livekit-test.example.com` |
-| UDP ポート | 50000 | 50001 |
-| TCP フォールバック | 7881 | 7882 |
 | API 鍵 | `*_MAIN` | `*_TEST` |
 
 ### 使用する LiveKit のバージョン
@@ -92,18 +105,16 @@ testnet 版 / mainnet 版のアプリが別々の compose プロジェクトで�
 LiveKit は**独立した3つ目のプロジェクト**として切り出しています。
 
 ```
-[harbor-voice]  livekit-main + livekit-test
-                        ↑  harbor-voice ネットワーク  ↑
-[harbor-main]   app ────┘                             │
-[harbor-test]   app ──────────────────────────────────┘
-                        ↑
-                   cloudflared（Docker で動かす場合はここにも参加）
+[harbor-voice]  livekit-main（host net）  livekit-test（host net）
+                        ▲                         ▲
+                        │  host.docker.internal   │
+[harbor-main]   app ────┘                         │
+[harbor-test]   app ──────────────────────────────┘
 ```
 
-アプリは `harbor-voice` ネットワークに参加し、`http://livekit-main:7880` のように
-**コンテナ名で LiveKit の管理 API を叩きます**（発言権の付与・参加者一覧の取得）。
-
----
+LiveKit は host ネットワークにいるため、**コンテナ名では引けません**。
+アプリからは `http://host.docker.internal:7880`（testnet は `:7883`）で
+管理 API（発言権の付与・参加者一覧）を叩きます。
 
 ## 2. 通信経路の考え方
 
@@ -123,13 +134,34 @@ Cloudflare がそのまま扱えるため、ポート開放も証明書も要り
 メディアが Cloudflare を通らなくても安全性は保たれます。**WebRTC 自身が
 DTLS-SRTP で暗号化**しているためです。証明書もドメインも不要です。
 
+### なぜ host ネットワークなのか
+
+当初は Docker の bridge ネットワーク＋個別ポート publish で構成していましたが、
+**LAN 内の PC から接続できない**問題が起きました。
+
+LiveKit が自分のアドレスとして認識していたのが bridge 内のアドレス
+（`172.x.x.x`）だったため、ICE candidate にはグローバルIPしか載りません。
+外部のスマートフォンからは繋がる一方、**同じ LAN 内の PC は自分のルーターの
+グローバルIPへ接続しようとして NAT loopback（ヘアピンNAT）の制約に阻まれます**。
+
+`network_mode: host` にすると LiveKit がサーバーの LAN アドレスを直接扱えるように
+なり、`advertise_internal_ip: true` と併せて **LAN アドレスとグローバルIPの両方**を
+candidate として広告します。
+
+```
+LAN 内 PC        → 192.168.0.x（サーバーの LAN アドレス）
+外部スマートフォン → グローバルIP
+```
+
+これで両方から接続が成立します。
+
 ### DNS の扱い
 
 シグナリング用ホスト名は **Cloudflare Tunnel の Public Hostname として作成**します。
 `DNS only`（グレー雲）でグローバルIPへ向ける旧来のやり方は**しません**。
 
 ```
-livekit.example.com → Cloudflare Edge → Cloudflare Tunnel → livekit-main:7880
+livekit.example.com → Cloudflare Edge → Cloudflare Tunnel → localhost:7880
 ```
 
 メディアはこのホスト名を経由しません。ICE が**サーバーのグローバルIPへ直接**
@@ -224,9 +256,11 @@ docker compose -p harbor-voice logs livekit-test | grep -E "starting LiveKit ser
 
 | | mainnet | testnet |
 |---|---|---|
+| `portHttp` | 7880 | **7883** |
 | `rtc.portTCP` | 7881 | 7882 |
 | `rtc.portUDP` | 50000 | 50001 |
-| `nodeIP` | **サーバーのグローバルIP** | 同左 |
+| `nodeIP` | サーバーのアドレス | 同左 |
+| `advertiseInternalIP` | `true` | `true` |
 
 `nodeIP` がローカルIP（192.168.x.x 等）になっている場合は、
 [トラブルシューティング](#ice-candidate-にローカルipしか出ない)の手動指定モードへ。
@@ -237,44 +271,34 @@ docker compose -p harbor-voice logs livekit-test | grep -E "starting LiveKit ser
 
 ### Step 5. cloudflared から LiveKit へ到達できるようにする
 
-cloudflared の設置形態によって方法が変わります。
+LiveKit は host ネットワークで動いているため、**ホストの localhost で待ち受けています**。
 
-#### パターンA：cloudflared を Docker で動かす（推奨）
+| 環境 | 接続先 |
+|---|---|
+| mainnet | `http://localhost:7880` |
+| testnet | `http://localhost:7883` |
 
-`harbor-voice` ネットワークへ参加させると、コンテナ名でそのまま到達できます。
-**7880 をホストへ publish する必要はありません。**
+#### cloudflared をホストOSで動かしている場合
 
-```bash
-docker network connect harbor-voice <cloudflared のコンテナ名>
-```
+そのまま `localhost` で到達できます。**追加の設定は不要**です。
 
-cloudflared 側の compose に書く場合は external network として参加させます。
+#### cloudflared を Docker で動かしている場合
+
+コンテナ内の `localhost` はコンテナ自身を指すため、ホストを参照する必要があります。
+cloudflared のサービスに host gateway を追加してください。
 
 ```yaml
 services:
   cloudflared:
     # …既存の設定…
-    networks: [default, voice]
-
-networks:
-  voice:
-    external: true
-    name: harbor-voice
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 ```
 
-ingress の接続先は `http://livekit-main:7880` / `http://livekit-test:7880` です。
+接続先は `http://host.docker.internal:7880` / `:7883` になります。
 
-#### パターンB：cloudflared をホストOSで動かす
-
-`docker-compose.voice.yml` は 7880 を**127.0.0.1 にだけ** publish しています
-（Internet へは出ません）。ホスト名衝突を避けるため、testnet はホスト側 7883 です。
-
-| 環境 | ホスト側 | コンテナ内 |
-|---|---|---|
-| mainnet | `127.0.0.1:7880` | 7880 |
-| testnet | `127.0.0.1:7883` | 7880 |
-
-ingress の接続先は `http://127.0.0.1:7880` / `http://127.0.0.1:7883` になります。
+> 以前のバージョンでは `livekit-main:7880` のようにコンテナ名で参照していましたが、
+> **host ネットワーク化により名前解決できなくなりました**。この方法は使えません。
 
 ### Step 6. Cloudflare Tunnel に ingress を追加する
 
@@ -287,10 +311,10 @@ ingress:
   # …既存の Harbor 用エントリはそのまま…
 
   - hostname: livekit.example.com
-    service: http://livekit-main:7880      # パターンB なら http://127.0.0.1:7880
+    service: http://localhost:7880         # Docker の cloudflared なら host.docker.internal
 
   - hostname: livekit-test.example.com
-    service: http://livekit-test:7880      # パターンB なら http://127.0.0.1:7883
+    service: http://localhost:7883         # testnet は 7883
 
   - service: http_status:404
 ```
@@ -310,7 +334,7 @@ Cloudflare ダッシュボードの Public Hostname で管理している場合�
 LIVEKIT_API_KEY=＜LIVEKIT_API_KEY_MAIN と同じ値＞
 LIVEKIT_API_SECRET=＜LIVEKIT_API_SECRET_MAIN と同じ値＞
 LIVEKIT_WS_URL=wss://livekit.example.com
-LIVEKIT_API_URL=http://livekit-main:7880
+LIVEKIT_API_URL=http://host.docker.internal:7880
 ```
 
 **testnet 環境の `.env`**
@@ -319,7 +343,7 @@ LIVEKIT_API_URL=http://livekit-main:7880
 LIVEKIT_API_KEY=＜LIVEKIT_API_KEY_TEST と同じ値＞
 LIVEKIT_API_SECRET=＜LIVEKIT_API_SECRET_TEST と同じ値＞
 LIVEKIT_WS_URL=wss://livekit-test.example.com
-LIVEKIT_API_URL=http://livekit-test:7880
+LIVEKIT_API_URL=http://host.docker.internal:7883
 ```
 
 > `LIVEKIT_WS_URL` にポート番号は不要です（Cloudflare が 443 で受けるため）。
@@ -630,12 +654,12 @@ testnet または mainnet の片方だけで使う場合は、不要なほうを
 
 | 変数 | 必須 | 説明 |
 |---|---|---|
-| `LIVEKIT_API_KEY_MAIN` / `_SECRET_MAIN` | ○ | mainnet 用の鍵。未設定なら起動時にエラーで停止 |
+| `LIVEKIT_API_KEY_MAIN` / `_SECRET_MAIN` | ○ | mainnet 用の鍵。compose が `LIVEKIT_KEYS` に組み立てて渡す |
 | `LIVEKIT_API_KEY_TEST` / `_SECRET_TEST` | ○ | testnet 用の鍵 |
 | `LIVEKIT_DOMAIN_MAIN` / `_TEST` | 参考 | Cloudflare Tunnel の Public Hostname。compose は読まないが、各環境の `LIVEKIT_WS_URL` と一致させる |
-| `LIVEKIT_MAIN_SIGNAL_PORT` | 任意 | 127.0.0.1 側のシグナリングポート（既定 7880） |
-| `LIVEKIT_TEST_SIGNAL_PORT` | 任意 | 同上（既定 7883） |
-| `LIVEKIT_NODE_IP` | 任意 | ICE candidate に広告するグローバルIP。既定は `auto` で自動検出 |
+
+ポート番号は環境変数ではなく `livekit.*.yaml` に直接書いています。ICE candidate に
+実ポートが載るため、外から差し替えられる形にしていません。
 
 ### アプリ側（各環境の `.env`）
 
@@ -644,10 +668,11 @@ testnet または mainnet の片方だけで使う場合は、不要なほうを
 | `LIVEKIT_API_KEY` | ○ | この環境に対応する鍵。`.env.voice` の値と一致させる |
 | `LIVEKIT_API_SECRET` | ○ | 同上。**ブラウザへは渡らない** |
 | `LIVEKIT_WS_URL` | ○ | ブラウザが繋ぐ公開URL（例 `wss://livekit.example.com`） |
-| `LIVEKIT_API_URL` | 任意※ | 管理 API の接続先。省略時は `LIVEKIT_WS_URL` から導出 |
+| `LIVEKIT_API_URL` | 任意※ | 管理 API の接続先。`http://host.docker.internal:7880`（testnet は `:7883`） |
 
 ※ コードとしては省略可能ですが、**この構成では実質必須**です。省略すると
-Cloudflare 経由で自分に戻る遠回りな経路になります。
+Cloudflare 経由で自分に戻る遠回りな経路になります。アプリの compose には
+`extra_hosts: host.docker.internal:host-gateway` が必要です（設定済み）。
 
 上3つが揃ったときだけライブトークが有効になります（1つでも欠けると非表示）。
 
@@ -666,7 +691,8 @@ Cloudflare 経由で自分に戻る遠回りな経路になります。
 
 | ポート | 理由 |
 |---|---|
-| 7880/TCP | シグナリング。Cloudflare Tunnel からのみ到達させる（127.0.0.1 に publish） |
+| 7880/TCP（mainnet） | シグナリング。Cloudflare Tunnel からのみ到達させる |
+| 7883/TCP（testnet） | 同上 |
 | 80/TCP・443/TCP | LiveKit のためには不要。TLS 終端は Cloudflare Edge が行う |
 
 Cloudflare Tunnel 自身が必要とする外向き通信は、既存の cloudflared 設定に従います。
@@ -696,8 +722,8 @@ Docker の場合は**イメージが古い**可能性もあるので `--build` �
 エラー内容を確認してください。
 
 - **404 / 502 が返る** → Cloudflare Tunnel の ingress が LiveKit へ届いていません。
-  cloudflared が `harbor-voice` ネットワークに参加しているか（パターンA）、
-  `127.0.0.1:7880` / `7883` を指しているか（パターンB）を確認します
+  cloudflared の ingress が `localhost:7880` / `localhost:7883` を指しているか
+  （Docker 上なら `host.docker.internal`）を確認します
 - **`Content Security Policy` エラー** → `LIVEKIT_WS_URL` が CSP に反映されていません。
   `wss://` なら包括許可されているので、まず URL のスキームを確認してください
 - **`Mixed Content` エラー** → `LIVEKIT_WS_URL` が `ws://` になっています
@@ -730,8 +756,9 @@ docker compose -p harbor-voice logs livekit-main | tail -30
 ```
 
 - `protocol` が `tcp` → UDP が通らずフォールバックしています（UDP 開放を確認）
-- `remoteCandidate` がローカルIP（192.168.x.x 等）→ `LIVEKIT_NODE_IP` に
-  グローバルIPを明示してください（下記）
+- `remoteCandidate` が LAN アドレス（192.168.x.x 等）→ **LAN 内から接続している場合は
+  これが正常**です（`advertise_internal_ip: true` により LAN アドレスも広告されます）。
+  外部回線から繋いでいるのにこれが出る場合は、グローバルIPの検出に失敗しています
 - `remoteCandidate` が Cloudflare のIP → 構成が誤っています。メディアは
   Cloudflare を通してはいけません
 
@@ -840,6 +867,27 @@ new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, 
   与えず、発言権はサーバー経由でしか取得できません
 - Cloudflare Tunnel 化にあたって、この認可方式は一切緩めていません
 
+### host ネットワークでの注意点
+
+`network_mode: host` により、LiveKit はホストのネットワークで直接待ち受けます。
+**Docker によるバインド制限が効かないため、シグナリングポート（7880 / 7883）の
+保護はルーター/ファイアウォール任せになります。**
+
+ルーターで 7880 / 7883 を転送していないことを確認してください。加えて、
+ファイアウォールでも明示的に塞いでおくと二重の防御になります。
+
+```bash
+# 待ち受け状況の確認
+sudo ss -lntp | grep -E ':(7880|7883)'
+
+# 例: LAN からのみ許可し、それ以外は拒否（環境に合わせて調整）
+sudo ufw allow from 192.168.0.0/24 to any port 7880 proto tcp
+sudo ufw allow from 192.168.0.0/24 to any port 7883 proto tcp
+```
+
+シグナリングは Cloudflare Tunnel が `localhost` 経由で到達するため、
+**外部へ公開する必要はありません**。
+
 ### 経路を分けている理由（Cloudflare Tunnel 併用）
 
 **制御系は Cloudflare Tunnel で隠し、リアルタイム音声だけを直接 SFU へ流す**のが
@@ -880,11 +928,11 @@ UDP mux なら publish は1ポートで済み、容量も落ちません。Docke
 - `livekit.*.yaml` の `udp_port` と `docker-compose.voice.yml` の publish は
   必ず一致させてください（ICE candidate に実ポートが載るため、docker 側でずらせません）
 
-**将来の拡張余地**
+**host ネットワークとの関係**
 
-参加者数や packet/s が増えて Docker の NAT がボトルネックになった場合は、
-`network_mode: host` への移行を検討します（LiveKit 公式が本番で推奨している方式）。
-現構成では不要です。
+現在は `network_mode: host` を採用しているため、そもそも Docker のポート publish を
+行っていません。UDP mux は LiveKit 側の設定（`udp_port`）として維持しており、
+ポートレンジ方式に戻す必要はありません。
 
 ### TURN について
 
@@ -924,7 +972,7 @@ LiveKit の redis は**複数ノードを束ねるときのノード間調整**�
 docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
   -p harbor-main up -d
 
-# 音声スタック側（鍵・ポート・LIVEKIT_NODE_IP）を変えた場合
+# 音声スタック側（鍵・ポート）を変えた場合
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
 
 # ホスト名を変えた場合は Cloudflare Tunnel の ingress も更新すること
