@@ -41,7 +41,7 @@ function formatWhen(d: Date | null): string {
 export default async function CommunityPage() {
   const session = await auth();
 
-  // いまライブトークに人がいるトピック（トピックID → 人数）。
+  // いまharborTalkに人がいるトピック（トピックID → 人数）。
   // LiveKit 未設定なら空で、バッジも並べ替えも発生しない。
   const livekit = getLivekitConfig();
   const liveCounts = livekit ? await listActiveVoiceRoomCounts(livekit) : {};
@@ -73,7 +73,7 @@ export default async function CommunityPage() {
     select: topicSelect,
   });
 
-  // ライブトーク中のトピックが上位100件から漏れていたら拾い直す
+  // harborTalk中のトピックが上位100件から漏れていたら拾い直す
   // （一過性のライブを取りこぼさないため）。
   const missingLiveIds = liveIds.filter(
     (id) => !recent.some((t) => t.id === id),
@@ -85,7 +85,7 @@ export default async function CommunityPage() {
       })
     : [];
 
-  // ライブトーク中を先頭へ。ライブ同士は人数の多い順、それ以外は元の順序を保つ。
+  // harborTalk中を先頭へ。ライブ同士は人数の多い順、それ以外は元の順序を保つ。
   const topics = [...missingLive, ...recent].sort((a, b) => {
     const ca = liveCounts[a.id] ?? 0;
     const cb = liveCounts[b.id] ?? 0;
@@ -152,7 +152,7 @@ export default async function CommunityPage() {
                             className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"
                             aria-hidden="true"
                           />
-                          🎧 ライブトーク {liveCount}人
+                          🎧 harborTalk {liveCount}人
                         </span>
                       )}
                     </div>

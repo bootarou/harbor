@@ -22,7 +22,7 @@ export async function POST(
   const cfg = getLivekitConfig();
   if (!cfg) {
     return NextResponse.json(
-      { error: "ライブトークは利用できません" },
+      { error: "harborTalkは利用できません" },
       { status: 503 }
     );
   }

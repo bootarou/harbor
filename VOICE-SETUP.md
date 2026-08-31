@@ -1,7 +1,7 @@
-# ライブトーク（LiveKit）セットアップマニュアル
+# harborTalk（LiveKit）セットアップマニュアル
 
 コミュニティの各チャットルーム（`/community/[topicId]`）に音声で会話できる
-「ライブトーク」を追加する機能の構築手順です。UI はチャット入力バーの**上の段**に
+「harborTalk」を追加する機能の構築手順です。UI はチャット入力バーの**上の段**に
 常時表示され、未参加でも「いま誰がいるか」が見えます。参加すると既定は**聴講者**
 （聴くだけ）で、「🎙 発言」を押したときだけ**最大5人**までの発言枠を取得して
 マイクが有効になります。トピック一覧 `/community` には、ライブ中のトピックに
@@ -183,7 +183,7 @@ livekit.example.com → Cloudflare Edge → Cloudflare Tunnel → localhost:7880
 ### Step 1. API 鍵を生成する
 
 **環境ごとに必ず別の値**にします。鍵を分けておくことで、片方が漏洩しても
-もう片方のライブトークには入れません。
+もう片方のharborTalkには入れません。
 
 ```bash
 openssl rand -hex 16   # KEY 用（2つ）
@@ -368,12 +368,12 @@ docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
 ```
 
 > オーバーレイを重ねずに素の `docker compose up -d` で起動すれば、
-> 従来どおり**ライブトークなし**で動きます。
+> 従来どおり**harborTalkなし**で動きます。
 
 ### Step 9. 動作確認
 
 1. `/community` で適当なトピックを開く
-2. チャット入力バーの上段に「🎧 ライブトーク」の行が出ていることを確認
+2. チャット入力バーの上段に「🎧 harborTalk」の行が出ていることを確認
    （**出ない場合は環境変数が未設定**）
 3. 右端の「参加」を押し、自分のアイコンが行に並べば**シグナリング（①）は成功**
 4. 「🎙 発言 0/5」→ ブラウザのマイク許可を承認 → 表示が「🎧 聴講に戻る」に変わり、
@@ -389,7 +389,7 @@ docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
 
 #### 外部IPが ICE candidate に使われているか確認する
 
-LAN 外のスマートフォンを 4G/5G に切り替えてライブトークに参加し、
+LAN 外のスマートフォンを 4G/5G に切り替えてharborTalkに参加し、
 PC 側の Chrome で `chrome://webrtc-internals` を開きます。
 
 該当の接続を選び、次を確認します。
@@ -409,21 +409,21 @@ signaling : Browser → Cloudflare → Tunnel → LiveKit:7880
 media     : Browser → 自社回線のグローバルIP → LiveKit   ← Cloudflare を通らない
 ```
 
-開発モードであれば、アプリのコンソールに出る `[livetalk] ICE 診断` でも
+開発モードであれば、アプリのコンソールに出る `[harborTalk] ICE 診断` でも
 同じ内容（protocol / local / remote candidate）を確認できます。
 
-### 既存環境をライブトーク対応に更新する
+### 既存環境をharborTalk対応に更新する
 
 すでに稼働している環境に追加する場合の手順です。**`git pull` と
 `docker compose up -d --build` だけでは動きません**（音声スタックが別プロジェクト
 のため）。段階的に進めることを推奨します。
 
-> **DB について**: ライブトークはデータモデルを追加していないため、マイグレーションの
+> **DB について**: harborTalkはデータモデルを追加していないため、マイグレーションの
 > 心配は不要です（`entrypoint.sh` の `prisma db push` は冪等です）。
 
 | Phase | 内容 |
 |---|---|
-| A | `git pull` → `docker compose -p <既存プロジェクト名> up -d --build`。`.env` に `LIVEKIT_*` を書かなければ**ライブトークは非表示のまま**なので、既存機能への影響だけ先に確認できる |
+| A | `git pull` → `docker compose -p <既存プロジェクト名> up -d --build`。`.env` に `LIVEKIT_*` を書かなければ**harborTalkは非表示のまま**なので、既存機能への影響だけ先に確認できる |
 | B | Step 2 のポート開放（コマンドではない作業） |
 | C | Step 3〜6（音声スタック起動 → cloudflared 接続 → ingress 追加） |
 | D | Step 7〜8（`.env` 設定 → オーバーレイ付きで再起動） |
@@ -598,7 +598,7 @@ new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, 
 ### Step 3. 確認する
 
 1. ログインし、`/community/new` でトピックを作る（未作成の場合）
-2. そのトピックを開き、入力バーの上段に「🎧 ライブトーク」の行が出ることを確認
+2. そのトピックを開き、入力バーの上段に「🎧 harborTalk」の行が出ることを確認
 3. 右端の「参加」→ 自分のアイコンが並べば**シグナリング成功**
 4. 「🎙 発言 0/5」→ マイク許可を承認 → 声を出すと自分のチップが**緑に光る**
 
@@ -624,7 +624,7 @@ docker rm -f harbor-livekit-local
 
 ### ローカルで詰まったときは
 
-- **ライブトークの行が出ない** → `.env` の3つ（KEY / SECRET / WS_URL）が揃っているか確認。
+- **harborTalkの行が出ない** → `.env` の3つ（KEY / SECRET / WS_URL）が揃っているか確認。
   Docker の場合は**イメージが古い**可能性が高いので `--build` を付けて再ビルドする
 - **「接続できませんでした」** → まず `docker logs harbor-livekit-local` を見る。
   `invalid API key` なら鍵の不一致（共通 Step 1 参照）
@@ -674,7 +674,7 @@ testnet または mainnet の片方だけで使う場合は、不要なほうを
 Cloudflare 経由で自分に戻る遠回りな経路になります。アプリの compose には
 `extra_hosts: host.docker.internal:host-gateway` が必要です（設定済み）。
 
-上3つが揃ったときだけライブトークが有効になります（1つでも欠けると非表示）。
+上3つが揃ったときだけharborTalkが有効になります（1つでも欠けると非表示）。
 
 ### ポート一覧
 
@@ -705,7 +705,7 @@ Cloudflare Tunnel 自身が必要とする外向き通信は、既存の cloudfl
 参加して自分のアイコンが行に並べば①は成功しており、そこから先の
 「声が聞こえない」は②の問題です。
 
-### ライブトークの行が表示されない
+### harborTalkの行が表示されない
 
 `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `LIVEKIT_WS_URL` のいずれかが未設定です。
 
@@ -716,7 +716,7 @@ docker compose -p harbor-main exec app env | grep LIVEKIT
 3つとも値が入っているか確認し、足りなければ `.env` を直して再起動します。
 Docker の場合は**イメージが古い**可能性もあるので `--build` を付け直します。
 
-### 「ライブトークに接続できませんでした」と出る
+### 「harborTalkに接続できませんでした」と出る
 
 ①シグナリングの失敗です。ブラウザの開発者ツール（Console / Network）で
 エラー内容を確認してください。
@@ -745,10 +745,10 @@ docker compose -p harbor-voice logs livekit-main | tail -30
 原因です。`50000/UDP`（testnet は `50001/UDP`）を確認してください。
 
 **開発モードでは実際の経路をコンソールで確認できます。** 参加して数秒後に
-`[livetalk] ICE 診断` というログが出ます。
+`[harborTalk] ICE 診断` というログが出ます。
 
 ```
-[livetalk] ICE 診断 {
+[harborTalk] ICE 診断 {
   protocol: "udp",
   remoteCandidate: "srflx 203.0.113.10:50012",   ← サーバーのグローバルIPなら正常
   ...
@@ -841,7 +841,7 @@ new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, 
 
 | 状態 | 表示 |
 |---|---|
-| 未参加 | 🎧 ライブトーク＋参加者一覧＋[参加] |
+| 未参加 | 🎧 harborTalk＋参加者一覧＋[参加] |
 | 聴講中 | 参加者に自分が並ぶ＋[🎙 発言 n/5][退出] |
 | 発言権あり | 行頭が 🎙 に変わり [🎧 聴講に戻る] |
 | 発声中 | 自分のチップが緑に光る |
@@ -902,7 +902,7 @@ sudo ufw allow from 192.168.0.0/24 to any port 7883 proto tcp
 
 ### UDP mux（単一ポート多重化）について
 
-Harbor のライブトークは **LiveKit の UDP mux 機能**を使い、全参加者の WebRTC 通信を
+Harbor のharborTalkは **LiveKit の UDP mux 機能**を使い、全参加者の WebRTC 通信を
 **1つの UDP ポート**へ多重化しています。
 
 ```

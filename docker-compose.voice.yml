@@ -1,4 +1,4 @@
-# Harbor — ライブトーク（LiveKit）スタック。
+# Harbor — harborTalk（LiveKit）スタック。
 #
 # testnet 版 / mainnet 版のアプリが別々の compose プロジェクトで動いているため、
 # 音声まわりだけを独立したプロジェクトとして切り出している。

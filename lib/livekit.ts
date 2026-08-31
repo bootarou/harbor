@@ -123,13 +123,13 @@ function isLivekitBackingOff(): boolean {
 
 function noteLivekitFailure(): void {
   // 復旧の見込みが立つまでログを繰り返さないよう、停止に入る瞬間だけ記録する。
-  // 「一時的にライブトークが遅かった/バッジが出なかった」を後から追えるようにする。
+  // 「一時的にharborTalkが遅かった/バッジが出なかった」を後から追えるようにする。
   const wasHealthy = livekitDownUntil === 0;
   livekitDownUntil = Date.now() + LIVEKIT_FAILURE_BACKOFF_MS;
   if (wasHealthy) {
     console.warn(
       `[livekit] 到達できないため ${LIVEKIT_FAILURE_BACKOFF_MS / 1000}秒間 ` +
-        "問い合わせを停止します（ライブトークの参加者表示・バッジは一時的に出ません）"
+        "問い合わせを停止します（harborTalkの参加者表示・バッジは一時的に出ません）"
     );
   }
 }
@@ -233,7 +233,7 @@ let roomCountCache: { at: number; counts: Record<string, number> } | null = null
 const ROOM_COUNT_TTL = 15_000;
 
 /**
- * いまライブトークに人がいるトピックの人数を返す（トピックID → 人数）。
+ * いまharborTalkに人がいるトピックの人数を返す（トピックID → 人数）。
  * ルーム名は CommunityTopic.id なので、そのままキーとして使える。
  * LiveKit が応答しない場合は直前のキャッシュ、無ければ空を返す（一覧は落とさない）。
  */
@@ -322,7 +322,7 @@ export async function setSpeaker(
     if (!me) {
       return {
         ok: false as const,
-        error: "ライブトークに参加していません",
+        error: "harborTalkに参加していません",
         status: 409,
       };
     }
