@@ -4,12 +4,15 @@
 # 重要: UDP/TCP のポート番号は docker のポートマッピングで付け替えられない。
 # LiveKit は ICE candidate に「自分が実際に listen しているポート」を書いて
 # ブラウザへ広告するため、テストネット側とは *この設定ファイル自体で* 値を分ける。
-port: 7880 # シグナリング（ホストには公開せず caddy が中継する）
+port: 7880 # シグナリング（Internet へは出さず Cloudflare Tunnel から到達する）
 rtc:
   tcp_port: 7881 # UDP が塞がれた環境向けのフォールバック
   port_range_start: 50000 # 音声メディア（テストネットと重複させない）
   port_range_end: 50100
-  # 自ノードの外部IPを自動検出させる（compose の --node-ip=auto と併用）。
+  # 自ノードの外部IPを自動検出し ICE candidate に載せる。
+  # シグナリングは Cloudflare 経由でも、メディアはここで広告される
+  # **グローバルIPへ直接**繋がる。Cloudflare のIPを広告してはいけない。
+  # 自動検出でローカルIPしか出ない場合は .env.voice の LIVEKIT_NODE_IP を使う。
   use_external_ip: true
 keys:
   ${LIVEKIT_API_KEY_MAIN}: ${LIVEKIT_API_SECRET_MAIN}

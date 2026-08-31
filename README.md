@@ -53,7 +53,8 @@ Web Crypto API により暗号化して localStorage に保存されます（サ
 - **スタンプ送信**・**URL 自動リンク**・**オンライン（在室）表示**・自分の発言は右寄せ
 - メッセージへの**投げ銭**（P2P・合計/人数バッジ＋カウントアップ演出・収益/履歴連携）
 - **通報で非表示化**（ログは保持）・**30日無投稿で自動アーカイブ**・最新100件表示（メッセージは全件保持）
-- **音声スペース**（LiveKit）: 聴講者として参加し、最大5人まで発言できるボイスチャット。
+- **ライブトーク**（LiveKit）: 入力バー上段に常設。未参加でも参加者が見え、聴講者として参加して
+  最大5人まで発言できる。トピック一覧にはライブ中バッジが付き上位に並ぶ。
   設定した環境でのみ有効（構築手順は [VOICE-SETUP.md](VOICE-SETUP.md)）
 
 ### Symbol / 送金まわり（すべて P2P・ノンカストディアル）
@@ -155,8 +156,9 @@ npm run dev   # http://localhost:3000
 - `REPORT_NOTIFY_EMAIL` / `SMTP_*` — 通報・各種通知メール（SMTP 未設定時は実送信せずサーバーログに出力）
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — ブラウザプッシュ通知（Web Push / VAPID）。未設定ならプッシュのみ無効（[通知](#通知)参照）
 - `S3_*` / `NEXT_PUBLIC_S3_PUBLIC_URL` — 画像ストレージ（未設定ならローカル保存）
-- `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `LIVEKIT_WS_URL` / `LIVEKIT_API_URL` — コミュニティの音声スペース。
-  3つ揃ったときのみ有効（未設定なら UI ごと非表示）。**別途 LiveKit サーバーの構築とポート開放が必要** →
+- `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `LIVEKIT_WS_URL` / `LIVEKIT_API_URL` — コミュニティのライブトーク（音声）。
+  上3つが揃ったときのみ有効（未設定なら UI ごと非表示）。シグナリングは Cloudflare Tunnel を通し、
+  WebRTC の音声メディアのみグローバルIPへ直接公開する。**別途 LiveKit の構築とメディアポート開放が必要** →
   [VOICE-SETUP.md](VOICE-SETUP.md)
 
 ## Symbol ネットワーク

@@ -81,6 +81,70 @@ function waitForPublishPermission(
   });
 }
 
+// 開発時に WebRTC の実際の経路を確認するための診断ログ。
+// シグナリングは Cloudflare Tunnel 経由、メディアはグローバルIPへ直接 UDP、
+// という想定どおりに繋がっているかを確かめるために使う（本番では出さない）。
+// 参加者のトラックから RTCStatsReport を読み、選択された candidate pair を表示する。
+type IceCandidateStat = {
+  candidateType?: string;
+  address?: string;
+  port?: number;
+  protocol?: string;
+};
+
+async function logIceDiagnostics(room: Room): Promise<void> {
+  if (process.env.NODE_ENV === "production") return;
+  try {
+    // 自分の publish 中トラック、無ければ購読中のリモートトラックを使う。
+    const local = [...room.localParticipant.trackPublications.values()].find(
+      (p) => p.track
+    )?.track;
+    const remote = [...room.remoteParticipants.values()]
+      .flatMap((p) => [...p.trackPublications.values()])
+      .find((p) => p.track)?.track;
+    const track = local ?? remote;
+    if (!track) return;
+
+    const report = await track.getRTCStatsReport();
+    if (!report) return;
+
+    const pairs: RTCIceCandidatePairStats[] = [];
+    const candidates = new Map<string, IceCandidateStat>();
+    report.forEach((stat) => {
+      if (stat.type === "candidate-pair") pairs.push(stat as RTCIceCandidatePairStats);
+      if (stat.type === "local-candidate" || stat.type === "remote-candidate") {
+        candidates.set(stat.id, stat as IceCandidateStat);
+      }
+    });
+    const selected =
+      pairs.find((p) => p.state === "succeeded" && p.nominated) ??
+      pairs.find((p) => p.state === "succeeded");
+    if (!selected) return;
+
+    const localCand = selected.localCandidateId
+      ? candidates.get(selected.localCandidateId)
+      : undefined;
+    const remoteCand = selected.remoteCandidateId
+      ? candidates.get(selected.remoteCandidateId)
+      : undefined;
+
+    console.info("[livetalk] ICE 診断", {
+      connectionState: room.state,
+      iceState: selected.state,
+      protocol: remoteCand?.protocol ?? localCand?.protocol,
+      localCandidate: localCand
+        ? `${localCand.candidateType} ${localCand.address ?? "?"}:${localCand.port ?? "?"}`
+        : "(不明)",
+      remoteCandidate: remoteCand
+        ? `${remoteCand.candidateType} ${remoteCand.address ?? "?"}:${remoteCand.port ?? "?"}`
+        : "(不明)",
+      note: "remoteCandidate がサーバーのグローバルIP・protocol が udp なら想定どおり",
+    });
+  } catch (e) {
+    console.debug("[livetalk] ICE 診断を取得できませんでした", e);
+  }
+}
+
 // 行の右端に置く操作ボタンの基本クラス。
 const ROW_BUTTON =
   "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
@@ -190,6 +254,10 @@ export function VoiceDock({
       await created.connect(data.wsUrl, data.token);
       setRoom(created);
       pending = null;
+      // 開発時のみ、実際に選ばれた ICE 経路をコンソールへ出す。
+      if (process.env.NODE_ENV !== "production") {
+        window.setTimeout(() => void logIceDiagnostics(created), 3000);
+      }
     } catch (e) {
       console.error("voice join error", e);
       setError(

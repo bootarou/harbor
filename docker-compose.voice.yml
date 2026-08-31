@@ -1,27 +1,27 @@
-# Harbor — 音声スペース（LiveKit）スタック。
+# Harbor — ライブトーク（LiveKit）スタック。
 #
 # testnet 版 / mainnet 版のアプリが別々の compose プロジェクトで動いているため、
 # 音声まわりだけを独立したプロジェクトとして切り出している。
 #
 #   起動:  docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
 #
-# アプリ側（各環境の compose）は docker-compose.voice-app.yml を -f で重ねて
-# harbor-voice ネットワークに参加させる。手順は README / .env.voice.example を参照。
+# ┌ ネットワーク方針（重要）────────────────────────────────────────┐
+# │ シグナリング(WSS) … Cloudflare Tunnel を通す。7880 は Internet へ  │
+# │                     直接公開しない（cloudflared からのみ到達）。   │
+# │ メディア(WebRTC)  … Cloudflare Tunnel を通せない（UDP のため）。   │
+# │                     グローバルIPへ直接。DTLS-SRTP で暗号化される。 │
+# └──────────────────────────────────────────────────────────────┘
 #
-# ┌ 経路の整理 ────────────────────────────────────────────────┐
-# │ シグナリング: ブラウザ ─443/TCP→ caddy ─→ livekit-*:7880          │
-# │              （Caddy がホスト名で振り分け。443 は両環境で共有）    │
-# │ 音声メディア: ブラウザ ─UDP/TCP→ グローバルIPへ直接                │
-# │              （WebRTC が DTLS-SRTP で暗号化・証明書もドメインも不要）│
-# └────────────────────────────────────────────────────────────┘
+# ルーター/FW で Internet へ公開するのは **メディアだけ**:
+#   mainnet: 7881/TCP ＋ 50000-50100/UDP
+#   testnet: 7882/TCP ＋ 50200-50300/UDP
+# 80/443/7880 は LiveKit のためには一切開放しない。
 #
-# ルーター/FW で開放するポート:
-#   80/TCP           … Let's Encrypt の ACME チャレンジ
-#   443/TCP          … wss:// シグナリング（両環境で共有）
-#   7881/TCP         … mainnet のフォールバック
-#   7882/TCP         … testnet のフォールバック
-#   50000-50100/UDP  … mainnet の音声メディア
-#   50200-50300/UDP  … testnet の音声メディア
+# 7880（シグナリング）は 127.0.0.1 にだけ publish している。
+#   - cloudflared が Docker 上（推奨）: harbor-voice ネットワークに参加させ
+#     http://livekit-main:7880 / http://livekit-test:7880 で到達する（publish 不要だが害もない）
+#   - cloudflared がホストOS上: http://127.0.0.1:7880 / http://127.0.0.1:7883 で到達する
+# 詳細は VOICE-SETUP.md を参照。
 #
 # ※ UDP/TCP のポートは docker のマッピングで付け替えできない（ICE candidate に
 #   実ポートが載るため）。値は livekit.*.yaml 側で分けてある。
@@ -29,27 +29,6 @@
 #   単一ノードなので不要のため置いていない。
 
 services:
-  # TLS 終端。LiveKit 自体は TLS を持たないため前段に置く（自己ホストの標準構成）。
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    environment:
-      # Caddyfile 内の {$...} に展開される。未設定だと *.localhost（自己署名）で
-      # 起動するだけで wss:// は繋がらないため、実運用では必ず設定すること。
-      LIVEKIT_DOMAIN_MAIN: ${LIVEKIT_DOMAIN_MAIN:-livekit-main.localhost}
-      LIVEKIT_DOMAIN_TEST: ${LIVEKIT_DOMAIN_TEST:-livekit-test.localhost}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # 取得した証明書を永続化する（毎回再取得すると Let's Encrypt の制限に当たる）。
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - livekit-main
-      - livekit-test
-
   # --- メインネット環境用 LiveKit ---
   livekit-main:
     image: livekit/livekit-server:latest
@@ -59,15 +38,18 @@ services:
       LIVEKIT_API_KEY_MAIN: "${LIVEKIT_API_KEY_MAIN:?LIVEKIT_API_KEY_MAIN を設定してください}"
       LIVEKIT_API_SECRET_MAIN: "${LIVEKIT_API_SECRET_MAIN:?LIVEKIT_API_SECRET_MAIN を設定してください}"
     ports:
-      # 7880 はホストに公開しない（caddy が内部ネットワーク経由で中継する）。
-      # 平文 ws で直接繋がれると参加トークンが平文で流れるため。
+      # シグナリング: ループバックのみ（Internet へは出さない）。
+      - "127.0.0.1:${LIVEKIT_MAIN_SIGNAL_PORT:-7880}:7880"
+      # メディア: グローバルIPへ直接届く必要があるため 0.0.0.0 で公開。
       - "7881:7881"
       - "50000-50100:50000-50100/udp"
     volumes:
       - ./livekit.mainnet.yaml:/livekit.yaml:ro
     command:
       - --config=/livekit.yaml
-      - --node-ip=auto
+      # NAT 配下でグローバルIPを自動検出させる。ローカルIPしか candidate に
+      # 出ない環境では .env.voice の LIVEKIT_NODE_IP にグローバルIPを設定する。
+      - --node-ip=${LIVEKIT_NODE_IP:-auto}
 
   # --- テストネット環境用 LiveKit ---
   livekit-test:
@@ -77,20 +59,18 @@ services:
       LIVEKIT_API_KEY_TEST: "${LIVEKIT_API_KEY_TEST:?LIVEKIT_API_KEY_TEST を設定してください}"
       LIVEKIT_API_SECRET_TEST: "${LIVEKIT_API_SECRET_TEST:?LIVEKIT_API_SECRET_TEST を設定してください}"
     ports:
+      # mainnet と衝突しないようホスト側だけ 7883 にずらす（コンテナ内は 7880）。
+      - "127.0.0.1:${LIVEKIT_TEST_SIGNAL_PORT:-7883}:7880"
       - "7882:7882"
       - "50200-50300:50200-50300/udp"
     volumes:
       - ./livekit.testnet.yaml:/livekit.yaml:ro
     command:
       - --config=/livekit.yaml
-      - --node-ip=auto
-
-volumes:
-  caddy_data:
-  caddy_config:
+      - --node-ip=${LIVEKIT_NODE_IP:-auto}
 
 networks:
-  # 各環境のアプリ compose から external network として参加する共有ネットワーク。
-  # 名前を固定しているのは、別プロジェクトから参照できるようにするため。
+  # 各環境のアプリ compose、および Docker 上の cloudflared から
+  # external network として参加する共有ネットワーク。
   default:
     name: harbor-voice

@@ -1,21 +1,21 @@
-# 音声スペース（LiveKit）セットアップマニュアル
+# ライブトーク（LiveKit）セットアップマニュアル
 
-コミュニティの各チャットルーム（`/community/[topicId]`）に音声スペースを追加する機能の
-構築手順です。機能名は UI 上「**ライブトーク**」で、チャット入力バーの**上の段**に
-常時表示されます（未参加でも「いま誰がいるか」が見えます）。
-参加すると既定は**聴講者**（聴くだけ）で、「🎙 発言」を押したときだけ
-**最大5人**までの発言枠を取得してマイクが有効になります。
-トピック一覧 `/community` には、ライブ中のトピックにバッジが付き上位に並びます。
+コミュニティの各チャットルーム（`/community/[topicId]`）に音声で会話できる
+「ライブトーク」を追加する機能の構築手順です。UI はチャット入力バーの**上の段**に
+常時表示され、未参加でも「いま誰がいるか」が見えます。参加すると既定は**聴講者**
+（聴くだけ）で、「🎙 発言」を押したときだけ**最大5人**までの発言枠を取得して
+マイクが有効になります。トピック一覧 `/community` には、ライブ中のトピックに
+バッジが付き上位に並びます。
 
-この機能は **`LIVEKIT_*` を設定したときだけ有効**になります。未設定の環境ではパネルごと
-表示されないため、音声を使わない運用なら何も設定する必要はありません。
+この機能は **`LIVEKIT_*` を設定したときだけ有効**になります。未設定の環境では
+行ごと表示されないため、使わない運用なら何も設定する必要はありません。
 
 ---
 
 ## 目次
 
 - [1. 全体像](#1-全体像)
-- [2. なぜ Cloudflare Tunnel を使えないのか](#2-なぜ-cloudflare-tunnel-を使えないのか)
+- [2. 通信経路の考え方](#2-通信経路の考え方)
 - [3. 事前に必要なもの](#3-事前に必要なもの)
 - [4. セットアップ手順](#4-セットアップ手順)
 - [5. ローカル環境での単独テスト](#5-ローカル環境での単独テスト)
@@ -28,32 +28,54 @@
 
 ## 1. 全体像
 
-通信は**2系統**に分かれます。ここを押さえるとトラブル時の切り分けが速くなります。
+通信は**2系統**に分かれ、**通る経路がまったく違います**。ここを押さえると
+設定もトラブル時の切り分けも一気に楽になります。
 
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │ ① シグナリング（誰がどのルームにいるかの制御）│
-  ブラウザ ─────────┤   wss:// → 443/TCP → caddy → livekit-*:7880 │
-      │             │   TLS 証明書が必要                           │
-      │             └─────────────────────────────────────────────┘
-      │
-      │             ┌─────────────────────────────────────────────┐
-      └─────────────┤ ② 音声メディア（実際の声）                   │
-                    │   UDP 50000-50100 等 → 自鯖のグローバルIPへ直接│
-                    │   WebRTC が DTLS-SRTP で暗号化               │
-                    │   → 証明書もドメインも不要                    │
-                    └─────────────────────────────────────────────┘
+                          Cloudflare
+                              │
+              ┌───────────────┼────────────────┐
+              ▼               ▼                ▼
+        Harbor Web/API   LiveKit MAIN     LiveKit TEST
+          (既存Tunnel)     signaling        signaling
+                              │                │
+                        Cloudflare        Cloudflare
+                          Tunnel            Tunnel
+                              ▼                ▼
+                      livekit-main:7880  livekit-test:7880
+
+  ① シグナリング（誰がどの部屋にいるかの制御・WSS）
+     → Cloudflare Tunnel を通る。ポート開放も証明書も不要。
+
+  ② 音声メディア（実際の声・WebRTC）
+     → Cloudflare Tunnel を通れない（UDP のため）。グローバルIPへ直接。
+
+  Browser
+     ├── UDP 50000-50100 ──→ グローバルIP ──→ livekit-main
+     ├── UDP 50200-50300 ──→ グローバルIP ──→ livekit-test
+     ├── TCP 7881 ─────────→ グローバルIP ──→ livekit-main（UDP不可時）
+     └── TCP 7882 ─────────→ グローバルIP ──→ livekit-test（UDP不可時）
 ```
 
-**443 は testnet / mainnet で共有できます。** Caddy がホスト名（SNI）で
-`livekit-main` と `livekit-test` に振り分けるため、Cloudflare Tunnel のように
-ポートを分ける必要はありません。
+**Internet へ公開するのはメディアだけです。**
 
-分ける必要があるのは次の4点だけです。
+| | Internet へ公開 | 経路 |
+|---|---|---|
+| シグナリング 7880/TCP | **しない** | Cloudflare Tunnel からのみ到達 |
+| メディア UDP | する | グローバルIPへ直接 |
+| TCP フォールバック | する | グローバルIPへ直接 |
+| 80 / 443 | **LiveKit のためには不要** | — |
+
+TLS 終端は Cloudflare Edge が担当するため、リバースプロキシ（Caddy 等）も
+Let's Encrypt の証明書取得も**必要ありません**。
+
+### 環境ごとに分けるもの
+
+testnet と mainnet で分けるのは次の4点です。
 
 | | mainnet | testnet |
 |---|---|---|
-| サブドメイン | `livekit.example.com` | `livekit-test.example.com` |
+| ホスト名 | `livekit.example.com` | `livekit-test.example.com` |
 | UDP レンジ | 50000-50100 | 50200-50300 |
 | TCP フォールバック | 7881 | 7882 |
 | API 鍵 | `*_MAIN` | `*_TEST` |
@@ -61,104 +83,102 @@
 ### コンテナ構成
 
 testnet 版 / mainnet 版のアプリが別々の compose プロジェクトで動いているため、
-音声スタックは**独立した3つ目のプロジェクト**として切り出しています。
-各アプリの compose に Caddy を置くと 80/443 を取り合ってしまうためです。
+LiveKit は**独立した3つ目のプロジェクト**として切り出しています。
 
 ```
-[harbor-voice]  caddy(80,443) + livekit-main + livekit-test
+[harbor-voice]  livekit-main + livekit-test
                         ↑  harbor-voice ネットワーク  ↑
 [harbor-main]   app ────┘                             │
 [harbor-test]   app ──────────────────────────────────┘
+                        ↑
+                   cloudflared（Docker で動かす場合はここにも参加）
 ```
 
 アプリは `harbor-voice` ネットワークに参加し、`http://livekit-main:7880` のように
 **コンテナ名で LiveKit の管理 API を叩きます**（発言権の付与・参加者一覧の取得）。
-これによって自鯖のグローバル IP へ出て戻る「ヘアピン NAT」を回避しています。
 
 ---
 
-## 2. なぜ Cloudflare Tunnel を使えないのか
+## 2. 通信経路の考え方
 
-**音声メディアが UDP だからです。** Cloudflare Tunnel は HTTP(S) を運ぶもので、
-WebRTC が使う UDP を通せません。したがって LiveKit は
-**ルーターでポートを開けて、グローバル IP へ直接届かせる**必要があります。
+### Cloudflare Tunnel は「使える」が「全部は通せない」
 
-ここから2つの制約が出てきます。
+**シグナリング（HTTPS/WSS）は Cloudflare Tunnel を通せます。** WebSocket は
+Cloudflare がそのまま扱えるため、ポート開放も証明書も要りません。
 
-**① 生の IP アドレスは使えません**
+**一方、WebRTC の音声メディアは通せません。** UDP を使うためです。したがって
+メディア用のポートだけはルーターで開放し、グローバルIPへ直接届かせます。
 
-サイトを HTTPS で配信している以上、ブラウザの mixed content 制限により
-`ws://` では接続できず `wss://` が必須です。ところが**公的な認証局は IP アドレスに
-証明書を発行しません**。そのためホスト名が必要になります。
+```
+シグナリング: ブラウザ → Cloudflare Edge → Tunnel → livekit:7880
+音声メディア: ブラウザ → グローバルIP:UDP → livekit（Cloudflare を通らない）
+```
 
-**② Cloudflare は「DNS only（グレー雲）」にします**
+メディアが Cloudflare を通らなくても安全性は保たれます。**WebRTC 自身が
+DTLS-SRTP で暗号化**しているためです。証明書もドメインも不要です。
 
-サブドメイン自体は Cloudflare の DNS を使いますが、**プロキシ（オレンジ雲）は通しません**。
-オレンジ雲のままだと Let's Encrypt の証明書取得も WebSocket も Cloudflare を
-経由してしまい、UDP は当然通りません。
+### DNS の扱い
+
+シグナリング用ホスト名は **Cloudflare Tunnel の Public Hostname として作成**します。
+`DNS only`（グレー雲）でグローバルIPへ向ける旧来のやり方は**しません**。
+
+```
+livekit.example.com → Cloudflare Edge → Cloudflare Tunnel → livekit-main:7880
+```
+
+メディアはこのホスト名を経由しません。ICE が**サーバーのグローバルIPへ直接**
+接続します。**Cloudflare のIPが ICE candidate として広告されてはいけません。**
 
 ---
 
 ## 3. 事前に必要なもの
 
-- 自鯖のグローバル IP（固定 or DDNS）
-- Cloudflare などで管理しているドメイン
-- ルーター/ファイアウォールの設定権限（ポート開放のため）
+- 自鯖のグローバルIP（固定 or DDNS）
+- 稼働中の Cloudflare Tunnel（Harbor 本体で既に使っているもの）
+- ルーター/ファイアウォールの設定権限（メディアポート開放のため）
 - Docker / Docker Compose
 
 ---
 
 ## 4. セットアップ手順
 
-### Step 1. DNS レコードを作る
+### Step 1. API 鍵を生成する
 
-Cloudflare のダッシュボードで、音声用のサブドメインを **A レコード**で追加します。
-
-| Type | Name | Content | Proxy status |
-|---|---|---|---|
-| A | `livekit` | 自鯖のグローバル IP | **DNS only（グレー雲）** |
-| A | `livekit-test` | 自鯖のグローバル IP | **DNS only（グレー雲）** |
-
-> **重要**: 必ず**グレー雲**にしてください。オレンジ雲（Proxied）のままだと繋がりません。
-
-反映を確認します。表示される IP が自鯖のグローバル IP と一致していれば OK です。
+**環境ごとに必ず別の値**にします。鍵を分けておくことで、片方が漏洩しても
+もう片方のライブトークには入れません。
 
 ```bash
-dig +short livekit.example.com
-dig +short livekit-test.example.com
+openssl rand -hex 16   # KEY 用（2つ）
+openssl rand -hex 16   # SECRET 用（2つ・32文字になる）
 ```
 
-Cloudflare の IP（`104.x` や `172.67.x` など）が返る場合は、まだオレンジ雲のままです。
+> API Secret は**サーバー側のみ**で保持します。ブラウザへ渡すのは、サーバーが
+> 発行した LiveKit 接続用 JWT だけです。`NEXT_PUBLIC_*` に入れてはいけません。
 
-### Step 2. ルーターでポートを開放する
+### Step 2. ルーターでメディアポートを開放する
 
-自鯖のローカル IP 宛に、以下を転送します。
+自鯖のローカルIP宛に、以下を転送します。**80/443/7880 は開けません。**
 
 | ポート | プロトコル | 用途 |
 |---|---|---|
-| 80 | TCP | Let's Encrypt の証明書取得（ACME チャレンジ） |
-| 443 | TCP | wss:// シグナリング（**両環境で共有**） |
-| 7881 | TCP | mainnet のフォールバック（UDP が塞がれた利用者向け） |
-| 7882 | TCP | testnet のフォールバック |
 | 50000-50100 | **UDP** | mainnet の音声メディア |
 | 50200-50300 | **UDP** | testnet の音声メディア |
+| 7881 | TCP | mainnet のフォールバック（UDP が塞がれた利用者向け） |
+| 7882 | TCP | testnet のフォールバック |
 
-> **注意**: ホストの 80/443 が空いている必要があります。Cloudflare Tunnel
-> （cloudflared）は外向きの接続なので 80/443 は占有しませんが、他に Web サーバーが
-> 動いていないか確認してください。
-
-### Step 3. API 鍵を生成する
-
-**環境ごとに必ず別の値**にします。鍵を分けておくことで、片方が漏洩しても
-もう片方の音声ルームには入れません。
+UFW を使っている場合の例です。
 
 ```bash
-# 4回実行して、それぞれの値を控える
-openssl rand -hex 16   # KEY 用（2つ）
-openssl rand -hex 32   # SECRET 用（2つ）
+sudo ufw allow 7881/tcp
+sudo ufw allow 7882/tcp
+sudo ufw allow 50000:50100/udp
+sudo ufw allow 50200:50300/udp
 ```
 
-### Step 4. 音声スタックの設定ファイルを作る
+> Harbor 本体など**別用途で既に 80/443 を使っている場合は、それを閉じないでください。**
+> ここで言っているのは「LiveKit のためには開けなくてよい」という意味です。
+
+### Step 3. 音声スタックの設定ファイルを作る
 
 ```bash
 cp .env.voice.example .env.voice
@@ -167,36 +187,95 @@ cp .env.voice.example .env.voice
 `.env.voice` を編集します。
 
 ```bash
+LIVEKIT_API_KEY_MAIN=＜Step1で生成したKEY①＞
+LIVEKIT_API_SECRET_MAIN=＜Step1で生成したSECRET①＞
+LIVEKIT_API_KEY_TEST=＜Step1で生成したKEY②＞
+LIVEKIT_API_SECRET_TEST=＜Step1で生成したSECRET②＞
+
 LIVEKIT_DOMAIN_MAIN=livekit.example.com
 LIVEKIT_DOMAIN_TEST=livekit-test.example.com
-
-LIVEKIT_API_KEY_MAIN=＜Step3で生成したKEY①＞
-LIVEKIT_API_SECRET_MAIN=＜Step3で生成したSECRET①＞
-LIVEKIT_API_KEY_TEST=＜Step3で生成したKEY②＞
-LIVEKIT_API_SECRET_TEST=＜Step3で生成したSECRET②＞
 ```
 
 > `.env.voice` は `.gitignore` 済みです（実鍵を含むため追跡されません）。
 
-### Step 5. 音声スタックを起動する
+### Step 4. 音声スタックを起動する
 
-**アプリより先に起動してください。** アプリが参加する `harbor-voice` ネットワークを
-このプロジェクトが作成するためです。
+**アプリより先に起動してください。** アプリと cloudflared が参加する
+`harbor-voice` ネットワークをこのプロジェクトが作成するためです。
 
 ```bash
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
+docker compose -p harbor-voice logs livekit-main | grep "starting LiveKit server"
 ```
 
-証明書の取得を確認します。
+### Step 5. cloudflared から LiveKit へ到達できるようにする
+
+cloudflared の設置形態によって方法が変わります。
+
+#### パターンA：cloudflared を Docker で動かす（推奨）
+
+`harbor-voice` ネットワークへ参加させると、コンテナ名でそのまま到達できます。
+**7880 をホストへ publish する必要はありません。**
 
 ```bash
-docker compose -p harbor-voice logs caddy | grep -i "certificate obtained"
+docker network connect harbor-voice <cloudflared のコンテナ名>
 ```
 
-2つのドメイン分（`livekit.example.com` / `livekit-test.example.com`）出ていれば成功です。
-出ない場合は [トラブルシューティング](#証明書が取得できない) を参照してください。
+cloudflared 側の compose に書く場合は external network として参加させます。
 
-### Step 6. 各環境のアプリ設定を書く
+```yaml
+services:
+  cloudflared:
+    # …既存の設定…
+    networks: [default, voice]
+
+networks:
+  voice:
+    external: true
+    name: harbor-voice
+```
+
+ingress の接続先は `http://livekit-main:7880` / `http://livekit-test:7880` です。
+
+#### パターンB：cloudflared をホストOSで動かす
+
+`docker-compose.voice.yml` は 7880 を**127.0.0.1 にだけ** publish しています
+（Internet へは出ません）。ホスト名衝突を避けるため、testnet はホスト側 7883 です。
+
+| 環境 | ホスト側 | コンテナ内 |
+|---|---|---|
+| mainnet | `127.0.0.1:7880` | 7880 |
+| testnet | `127.0.0.1:7883` | 7880 |
+
+ingress の接続先は `http://127.0.0.1:7880` / `http://127.0.0.1:7883` になります。
+
+### Step 6. Cloudflare Tunnel に ingress を追加する
+
+**既存の Harbor 用ホスト名は消さず、追記して共存させます。**
+
+設定ファイル（`config.yml`）で管理している場合:
+
+```yaml
+ingress:
+  # …既存の Harbor 用エントリはそのまま…
+
+  - hostname: livekit.example.com
+    service: http://livekit-main:7880      # パターンB なら http://127.0.0.1:7880
+
+  - hostname: livekit-test.example.com
+    service: http://livekit-test:7880      # パターンB なら http://127.0.0.1:7883
+
+  - service: http_status:404
+```
+
+Cloudflare ダッシュボードの Public Hostname で管理している場合も同じ考え方で、
+2つのホスト名を追加します。
+
+> **Cloudflare Access などの追加認証を LiveKit のホスト名に付けないでください。**
+> LiveKit SDK の WebSocket 接続を壊す可能性があります。認可は Harbor が発行する
+> LiveKit JWT で行っています。WebSocket をブロックするルールも設定しないでください。
+
+### Step 7. 各環境のアプリ設定を書く
 
 **mainnet 環境の `.env`**
 
@@ -216,12 +295,13 @@ LIVEKIT_WS_URL=wss://livekit-test.example.com
 LIVEKIT_API_URL=http://livekit-test:7880
 ```
 
-> `LIVEKIT_WS_URL` にポート番号は不要です（Caddy が 443 で終端するため）。
+> `LIVEKIT_WS_URL` にポート番号は不要です（Cloudflare が 443 で受けるため）。
 >
-> これらはすべて**サーバー側の変数**（`NEXT_PUBLIC_` が付かない）なので、
-> **変更しても再ビルドは不要**です。コンテナの再起動だけで反映されます。
+> これらは**サーバー側の変数**（`NEXT_PUBLIC_` が付かない）です。接続先URLは
+> サーバーがトークンと一緒にクライアントへ渡すため、**コードにハードコードされて
+> おらず、クライアントバンドルにも焼き込まれません**。
 
-### Step 7. アプリを起動する
+### Step 8. アプリを起動する
 
 音声を使う環境では、`docker-compose.voice-app.yml` を `-f` で重ねます。
 これがアプリを `harbor-voice` ネットワークに参加させるオーバーレイです。
@@ -229,17 +309,17 @@ LIVEKIT_API_URL=http://livekit-test:7880
 ```bash
 # mainnet
 docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
-  -p harbor-main up -d
+  -p harbor-main up -d --build
 
 # testnet
 docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
-  -p harbor-test up -d
+  -p harbor-test up -d --build
 ```
 
 > オーバーレイを重ねずに素の `docker compose up -d` で起動すれば、
-> 従来どおり**音声なし**で動きます。
+> 従来どおり**ライブトークなし**で動きます。
 
-### Step 8. 動作確認
+### Step 9. 動作確認
 
 1. `/community` で適当なトピックを開く
 2. チャット入力バーの上段に「🎧 ライブトーク」の行が出ていることを確認
@@ -247,71 +327,50 @@ docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
 3. 右端の「参加」を押し、自分のアイコンが行に並べば**シグナリング（①）は成功**
 4. 「🎙 発言 0/5」→ ブラウザのマイク許可を承認 → 表示が「🎧 聴講に戻る」に変わり、
    声を出すと自分のチップが緑に光る
-5. **別の端末・別回線**（スマホの 4G/5G など）から同じトピックを開いて参加し、
-   声が聞こえるか確認 → 聞こえれば**メディア（②）も成功**
+5. **別の端末・別回線**（スマホを 4G/5G に切り替える）から同じトピックに参加し、
+   音声が届くか確認 → 届けば**メディア（②）も成功**
+6. 2台以上を発言者に昇格させ、**双方向**に声が届くことを確認
+7. 発言者を聴講に戻すと publish できなくなることを確認
+8. mainnet と testnet の両方で確認し、**混線しないこと**を確認
 
 > 手順5は必ず**別回線**で試してください。同じ LAN 内だと UDP がルーターを
 > 経由しないため、ポート開放の不備に気づけません。
 
-### 既存環境を音声対応に更新する
+### 既存環境をライブトーク対応に更新する
 
-すでに稼働している環境に音声を足す場合の手順です。**`git pull` と
-`docker compose up -d --build` だけでは音声は動きません**（音声スタックが別プロジェクト
+すでに稼働している環境に追加する場合の手順です。**`git pull` と
+`docker compose up -d --build` だけでは動きません**（音声スタックが別プロジェクト
 のため）。段階的に進めることを推奨します。
 
-> **DB について**: 音声機能はデータモデルを追加していないため、マイグレーションの
-> 心配は不要です（`entrypoint.sh` の `prisma db push` は冪等で、変更が無ければ何もしません）。
+> **DB について**: ライブトークはデータモデルを追加していないため、マイグレーションの
+> 心配は不要です（`entrypoint.sh` の `prisma db push` は冪等です）。
 
-**Phase A — コードだけ先に反映（音声は無効のまま）**
-
-`.env` に `LIVEKIT_*` を設定しなければ音声パネルは非表示のままなので、
-まずここまでで既存機能に影響が無いか確認できます。**従来どおりの更新手順です。**
-
-```bash
-git pull
-docker compose -p <既存のプロジェクト名> up -d --build
-```
-
-**Phase B — インフラ作業**（コマンドではない）
-
-[Step 1](#step-1-dns-レコードを作る) の DNS と [Step 2](#step-2-ルーターでポートを開放する) の
-ポート開放を行います。あわせて**ホストの 80/443 が空いている**ことを確認してください。
-
-**Phase C — 音声スタックを起動**（アプリより先に）
-
-[Step 4](#step-4-音声スタックの設定ファイルを作る)・[Step 5](#step-5-音声スタックを起動する) の手順です。
-証明書が2ドメイン分取得できてから次へ進みます。
-
-**Phase D — 各環境の `.env` を設定し、オーバーレイ付きで再起動**
-
-[Step 6](#step-6-各環境のアプリ設定を書く) の内容を `.env` に書いたうえで:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
-  -p <既存のプロジェクト名> up -d --build
-```
+| Phase | 内容 |
+|---|---|
+| A | `git pull` → `docker compose -p <既存プロジェクト名> up -d --build`。`.env` に `LIVEKIT_*` を書かなければ**ライブトークは非表示のまま**なので、既存機能への影響だけ先に確認できる |
+| B | Step 2 のポート開放（コマンドではない作業） |
+| C | Step 3〜6（音声スタック起動 → cloudflared 接続 → ingress 追加） |
+| D | Step 7〜8（`.env` 設定 → オーバーレイ付きで再起動） |
 
 > **注意点**
-> - **プロジェクト名（`-p`）は既存と同じものを使う**こと。変えると別スタックが二重に作られます
->   （現在の名前は `docker ps` の `<プロジェクト名>-app-1` で確認できます）
-> - **順序が重要**。Phase C を先に実行しないと `harbor-voice` ネットワークが無く Phase D が失敗します
+> - **プロジェクト名（`-p`）は既存と同じものを使う**こと。変えると別スタックが
+>   二重に作られます（現在の名前は `docker ps` の `<プロジェクト名>-app-1` で確認できます）
+> - **順序が重要**。Phase C を先に実行しないと `harbor-voice` ネットワークが無く
+>   Phase D が失敗します
 > - **Phase D 以降は毎回オーバーレイが必要**。素の `docker compose up -d` に戻すと
 >   アプリがネットワークから外れ、発言権の付与が失敗します
 
 ### 環境変数を変更したときに再ビルドが要るか
 
-`LIVEKIT_*` は `NEXT_PUBLIC_*` ではないため基本的には実行時変数ですが、
-**`LIVEKIT_WS_URL` だけは例外**です。
-
-Next.js は `next.config.ts` の `headers()` の結果を**ビルド時に
-`routes-manifest.json` へ焼き込み**、実行時には再評価しません。`LIVEKIT_WS_URL` は
-CSP の `connect-src` に使われるため、ビルド時にも渡す必要があります
-（`docker-compose.yml` の `app.build.args` に入れてあります）。
+`LIVEKIT_*` は `NEXT_PUBLIC_*` ではないため基本的に実行時変数ですが、
+**`LIVEKIT_WS_URL` だけは例外**です。Next.js は `next.config.ts` の `headers()` の
+結果を**ビルド時に `routes-manifest.json` へ焼き込み**、実行時には再評価しません。
+`LIVEKIT_WS_URL` は CSP の `connect-src` に使われるため、ビルド時にも渡しています
+（`docker-compose.yml` の `app.build.args`）。
 
 ただし **CSP は `wss:` を包括的に許可**しているため（`connect-src` は既に `https:` を
-許可済みで、実質的な緩和にはならない）、**本番のように `wss://` を使う構成なら
-ドメインを変えても再ビルドは不要**です。再ビルドが要るのは、ローカル検証で
-平文の `ws://` を使う場合だけです。
+許可済みで実質的な緩和にはならない）、**本番のように `wss://` を使う構成なら
+ドメインを変えても再ビルドは不要**です。
 
 | 変更した変数 | 必要な操作 |
 |---|---|
@@ -325,7 +384,7 @@ CSP の `connect-src` に使われるため、ビルド時にも渡す必要が�
 
 **開発 PC 1台だけで動作確認できます。** ローカルはサイトが `http://localhost` で配信され、
 mixed content 制限の対象外なので **`ws://` がそのまま使えます**。したがって
-**Caddy も DNS も証明書も、ルーターのポート開放も不要**です。
+**Cloudflare Tunnel も DNS も証明書も、ルーターのポート開放も不要**です。
 
 > `localhost` はブラウザが「セキュアコンテキスト」として扱うため、HTTP でも
 > マイク（`getUserMedia`）が使えます。ただし **`http://192.168.x.x` では使えません**
@@ -374,7 +433,7 @@ docker run -d --name harbor-livekit-local \
 
 | ポート | 用途 |
 |---|---|
-| 7880/TCP | シグナリング（`ws://` で直接続。ローカルは Caddy 不要） |
+| 7880/TCP | シグナリング（ローカルは `ws://` で直接続。Tunnel 不要） |
 | 7881/TCP | UDP が通らないときのフォールバック |
 | 7882/UDP | 音声メディア（`--udp-port` で1ポートに多重化） |
 
@@ -506,10 +565,10 @@ docker rm -f harbor-livekit-local
 testnet または mainnet の片方だけで使う場合は、不要なほうを削るだけです。
 
 1. `docker-compose.voice.yml` から `livekit-test` サービスを削除
-2. `Caddyfile` からテストネットのブロックを削除
-3. `livekit.testnet.yaml` は不要
-4. `.env.voice` の `*_TEST` 変数は不要
-5. 開放するポートは `80` `443` `7881`/TCP と `50000-50100`/UDP のみ
+2. `livekit.testnet.yaml` は不要
+3. `.env.voice` の `*_TEST` 変数は不要
+4. Cloudflare Tunnel の ingress も1つだけ
+5. 開放するポートは `7881/TCP` と `50000-50100/UDP` のみ
 
 ---
 
@@ -519,49 +578,56 @@ testnet または mainnet の片方だけで使う場合は、不要なほうを
 
 | 変数 | 必須 | 説明 |
 |---|---|---|
-| `LIVEKIT_DOMAIN_MAIN` | ○ | mainnet 用サブドメイン（証明書取得に使う） |
-| `LIVEKIT_DOMAIN_TEST` | ○ | testnet 用サブドメイン |
 | `LIVEKIT_API_KEY_MAIN` / `_SECRET_MAIN` | ○ | mainnet 用の鍵。未設定なら起動時にエラーで停止 |
 | `LIVEKIT_API_KEY_TEST` / `_SECRET_TEST` | ○ | testnet 用の鍵 |
+| `LIVEKIT_DOMAIN_MAIN` / `_TEST` | 参考 | Cloudflare Tunnel の Public Hostname。compose は読まないが、各環境の `LIVEKIT_WS_URL` と一致させる |
+| `LIVEKIT_MAIN_SIGNAL_PORT` | 任意 | 127.0.0.1 側のシグナリングポート（既定 7880） |
+| `LIVEKIT_TEST_SIGNAL_PORT` | 任意 | 同上（既定 7883） |
+| `LIVEKIT_NODE_IP` | 任意 | ICE candidate に広告するグローバルIP。既定は `auto` で自動検出 |
 
 ### アプリ側（各環境の `.env`）
 
 | 変数 | 必須 | 説明 |
 |---|---|---|
 | `LIVEKIT_API_KEY` | ○ | この環境に対応する鍵。`.env.voice` の値と一致させる |
-| `LIVEKIT_API_SECRET` | ○ | 同上 |
-| `LIVEKIT_WS_URL` | ○ | ブラウザが繋ぐ公開 URL（例 `wss://livekit.example.com`） |
+| `LIVEKIT_API_SECRET` | ○ | 同上。**ブラウザへは渡らない** |
+| `LIVEKIT_WS_URL` | ○ | ブラウザが繋ぐ公開URL（例 `wss://livekit.example.com`） |
 | `LIVEKIT_API_URL` | 任意※ | 管理 API の接続先。省略時は `LIVEKIT_WS_URL` から導出 |
 
-※ コードとしては省略可能ですが、**この構成では実質必須**です。省略すると公開 URL 経由に
-なり、自鯖から自分のグローバル IP へ出て戻るヘアピン NAT が必要になって失敗しがちです。
+※ コードとしては省略可能ですが、**この構成では実質必須**です。省略すると
+Cloudflare 経由で自分に戻る遠回りな経路になります。
 
-上3つが揃ったときだけ音声スペースが有効になります（1つでも欠けると UI ごと非表示）。
+上3つが揃ったときだけライブトークが有効になります（1つでも欠けると非表示）。
 
 ### ポート一覧
 
-| ポート | 開放 | 用途 |
-|---|---|---|
-| 80/TCP | 必要 | ACME チャレンジ |
-| 443/TCP | 必要 | wss シグナリング（両環境共有） |
-| 7881/TCP | 必要 | mainnet フォールバック |
-| 7882/TCP | 必要 | testnet フォールバック |
-| 50000-50100/UDP | 必要 | mainnet メディア |
-| 50200-50300/UDP | 必要 | testnet メディア |
-| 7880/TCP | **不要** | Caddy が内部ネットワーク経由で中継するためホストに公開していない |
+**Internet へ公開する（ルーターで転送する）**
 
-> **7880 を開放してはいけません。** 平文 ws で直接接続されると参加トークンが
-> 平文で流れます。
+| ポート | 環境 | 用途 |
+|---|---|---|
+| 50000-50100/UDP | mainnet | 音声メディア |
+| 50200-50300/UDP | testnet | 音声メディア |
+| 7881/TCP | mainnet | UDP 不可時のフォールバック |
+| 7882/TCP | testnet | UDP 不可時のフォールバック |
+
+**公開しない**
+
+| ポート | 理由 |
+|---|---|
+| 7880/TCP | シグナリング。Cloudflare Tunnel からのみ到達させる（127.0.0.1 に publish） |
+| 80/TCP・443/TCP | LiveKit のためには不要。TLS 終端は Cloudflare Edge が行う |
+
+Cloudflare Tunnel 自身が必要とする外向き通信は、既存の cloudflared 設定に従います。
 
 ---
 
 ## 8. トラブルシューティング
 
 切り分けの基本は「**①シグナリングと②メディアのどちらで失敗しているか**」です。
-パネルに「参加中: N人」が表示されれば①は成功しており、そこから先の
+参加して自分のアイコンが行に並べば①は成功しており、そこから先の
 「声が聞こえない」は②の問題です。
 
-### 音声スペースのパネル自体が表示されない
+### ライブトークの行が表示されない
 
 `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `LIVEKIT_WS_URL` のいずれかが未設定です。
 
@@ -570,56 +636,68 @@ docker compose -p harbor-main exec app env | grep LIVEKIT
 ```
 
 3つとも値が入っているか確認し、足りなければ `.env` を直して再起動します。
+Docker の場合は**イメージが古い**可能性もあるので `--build` を付け直します。
 
-### 「音声スペースに接続できませんでした」と出る
+### 「ライブトークに接続できませんでした」と出る
 
-①シグナリングの失敗です。ブラウザの開発者ツール（Console / Network）を開いて
+①シグナリングの失敗です。ブラウザの開発者ツール（Console / Network）で
 エラー内容を確認してください。
 
-- **`Mixed Content` エラー** → `LIVEKIT_WS_URL` が `ws://` になっています。`wss://` にしてください
+- **404 / 502 が返る** → Cloudflare Tunnel の ingress が LiveKit へ届いていません。
+  cloudflared が `harbor-voice` ネットワークに参加しているか（パターンA）、
+  `127.0.0.1:7880` / `7883` を指しているか（パターンB）を確認します
 - **`Content Security Policy` エラー** → `LIVEKIT_WS_URL` が CSP に反映されていません。
-  この値は `next.config.ts` がサーバー起動時に読むため、**アプリの再起動**が必要です
-  （再ビルドは不要）
-- **証明書エラー** → Step 5 の証明書取得に失敗しています（下記参照）
-- **タイムアウト** → 443 が開いていない、またはドメインがオレンジ雲のままです
+  `wss://` なら包括許可されているので、まず URL のスキームを確認してください
+- **`Mixed Content` エラー** → `LIVEKIT_WS_URL` が `ws://` になっています
+- **WebSocket が即座に閉じる** → Cloudflare Access など追加認証が
+  LiveKit のホスト名に掛かっていないか確認してください
 
-外部からの到達性はこう確認できます。
+Tunnel 経由の到達性はこう確認できます。
 
 ```bash
 curl -I https://livekit.example.com
+docker compose -p harbor-voice logs livekit-main | tail -30
 ```
-
-### 証明書が取得できない
-
-```bash
-docker compose -p harbor-voice logs caddy | tail -50
-```
-
-よくある原因は3つです。
-
-1. **ドメインがオレンジ雲のまま** → グレー雲（DNS only）に変更する
-2. **80/TCP が開いていない** → ACME の HTTP-01 チャレンジに必要
-3. **DNS がまだ反映されていない** → `dig +short` で自鯖の IP が返るか確認
-
-Let's Encrypt には発行レート制限があるため、失敗を繰り返した場合は
-原因を直してから時間を空けて再試行してください。
 
 ### 参加はできるが声が聞こえない
 
 ②メディアの失敗です。**UDP ポートが開いていない**可能性が高いです。
 
-```bash
-docker compose -p harbor-voice logs livekit-main | tail -30
-```
-
 同一 LAN 内では成功して外部から失敗する場合、ほぼ確実にルーターの UDP 転送設定が
 原因です。`50000-50100/UDP`（testnet は `50200-50300/UDP`）を確認してください。
 
-> **注意**: docker のポートマッピングで UDP レンジを付け替えることは**できません**。
-> LiveKit は ICE candidate に「自分が実際に listen しているポート番号」を書いて
-> ブラウザへ広告するため、`50200-50300:50000-50100/udp` のような付け替えをすると
-> ブラウザは開いていないポートへ接続しにいって失敗します。レンジを変えたい場合は
-> `livekit.*.yaml` の `port_range_start` / `port_range_end` 自体を書き換えてください。
+**開発モードでは実際の経路をコンソールで確認できます。** 参加して数秒後に
+`[livetalk] ICE 診断` というログが出ます。
+
+```
+[livetalk] ICE 診断 {
+  protocol: "udp",
+  remoteCandidate: "srflx 203.0.113.10:50012",   ← サーバーのグローバルIPなら正常
+  ...
+}
+```
+
+- `protocol` が `tcp` → UDP が通らずフォールバックしています（UDP 開放を確認）
+- `remoteCandidate` がローカルIP（192.168.x.x 等）→ `LIVEKIT_NODE_IP` に
+  グローバルIPを明示してください（下記）
+- `remoteCandidate` が Cloudflare のIP → 構成が誤っています。メディアは
+  Cloudflare を通してはいけません
+
+### ICE candidate にローカルIPしか出ない
+
+`--node-ip=auto` の自動検出が NAT 構成によっては失敗します。`.env.voice` に
+サーバーのグローバルIPを明示してください。
+
+```bash
+LIVEKIT_NODE_IP=203.0.113.10
+```
+
+```bash
+docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
+```
+
+> 固定IPでない場合は、DDNS 更新時にこの値も更新する必要があります。
+> 空にしておけば自動検出に戻ります。
 
 ### 「発言する」を押してもマイクが有効にならない
 
@@ -629,29 +707,35 @@ docker compose -p harbor-voice logs livekit-main | tail -30
   この場合は発言権を自動的に返却するので、枠は空いたままになります
 - **「発言権の反映に時間がかかっています」** → アプリから LiveKit への管理 API が
   届いていません。`LIVEKIT_API_URL` と、アプリが `harbor-voice` ネットワークに
-  参加しているかを確認してください（下記）
+  参加しているかを確認してください
 
-### 発言権の付与が失敗する / 参加者数がおかしい
+### 発言権の付与が失敗する
 
 アプリから LiveKit への疎通を確認します。
 
 ```bash
-docker compose -p harbor-main exec app wget -qO- http://livekit-main:7880 || \
-  echo "→ livekit-main に到達できていません"
+docker compose -p harbor-main exec app node -e "
+const {RoomServiceClient}=require('livekit-server-sdk');
+new RoomServiceClient(process.env.LIVEKIT_API_URL, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET)
+ .listRooms().then(r=>console.log('OK', r.length)).catch(e=>console.log('NG', e.message));
+"
 ```
 
-到達できない場合は、`docker-compose.voice-app.yml` を `-f` で重ねずに起動している
-可能性が高いです。Step 7 のコマンドで起動し直してください。
+`OK 0` が出れば鍵とネットワークの両方が正しい状態です。到達できない場合は、
+`docker-compose.voice-app.yml` を `-f` で重ねずに起動している可能性が高いです。
 
-```bash
-# app が harbor-voice に参加しているか確認
-docker inspect harbor-main-app-1 --format '{{json .NetworkSettings.Networks}}' | tr ',' '\n' | grep -i voice
-```
-
-### 「スピーカーが満員です」と出る
+### 「満員です」と出る
 
 仕様どおりの挙動です。同時に発言できるのは**5人まで**で、上限に達すると
-ボタンがグレーアウトします。誰かが「聴講に戻る」か退出すれば枠が空きます。
+ボタンが無効になります。誰かが「聴講に戻る」か退出すれば枠が空きます。
+
+### mainnet と testnet が混線する
+
+ポートが重複していないか確認してください。UDP レンジと TCP フォールバックは
+`livekit.mainnet.yaml` / `livekit.testnet.yaml` で分けており、**docker の
+ポートマッピングでは付け替えられません**（ICE candidate に実ポートが載るため）。
+変更する場合は設定ファイル側の `port_range_start` / `port_range_end` /
+`tcp_port` を直してください。
 
 ---
 
@@ -685,6 +769,32 @@ docker inspect harbor-main-app-1 --format '{{json .NetworkSettings.Networks}}' |
 - **参加者 metadata には公開情報のみ**（表示名・アイコン・受取アドレス）を載せています。
   秘密鍵やセッション情報は一切含みません
 - トークンの有効期間は 2 時間、トークン発行のレート制限は 30 回/10分/ユーザーです
+- **API Secret はサーバー側のみ**で保持し、ブラウザへ渡すのは JWT だけです
+  （`NEXT_PUBLIC_*` には入れていません）
+- JWT に載せるのは対象ルームと最小限の権限だけです。聴講者には publish 権限を
+  与えず、発言権はサーバー経由でしか取得できません
+- Cloudflare Tunnel 化にあたって、この認可方式は一切緩めていません
+
+### 経路を分けている理由（Cloudflare Tunnel 併用）
+
+**制御系は Cloudflare Tunnel で隠し、リアルタイム音声だけを直接 SFU へ流す**のが
+この構成の基本思想です。
+
+- シグナリングを Tunnel に通すことで、80/443 の開放も証明書管理も不要になり、
+  オリジンのIPも露出しません
+- メディアは UDP のため Tunnel を通せませんが、WebRTC 自身が DTLS-SRTP で
+  暗号化するため、直接接続でも内容は保護されます
+- ICE candidate には**サーバーのグローバルIP**が載ります。Cloudflare のIPが
+  載る構成にしてはいけません（メディアが Cloudflare を経由してしまい繋がりません）
+
+### TURN について
+
+現状は独自 TURN サーバーを立てていません。まず「UDP 直接 → 失敗したら
+LiveKit の TCP フォールバック（7881/7882）」で運用します。
+
+企業ネットワークや特殊な NAT で接続できないケースが確認された場合に、
+TURN/TLS を追加できる余地は残してあります（LiveKit 側の設定追加で対応可能）。
+現時点で不要に複雑化させない方針です。
 
 ### 環境を分けている理由
 
@@ -715,8 +825,10 @@ LiveKit の redis は**複数ノードを束ねるときのノード間調整**�
 docker compose -f docker-compose.yml -f docker-compose.voice-app.yml \
   -p harbor-main up -d
 
-# 音声スタック側（ドメイン・鍵・ポート）を変えた場合
+# 音声スタック側（鍵・ポート・LIVEKIT_NODE_IP）を変えた場合
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
+
+# ホスト名を変えた場合は Cloudflare Tunnel の ingress も更新すること
 ```
 
 鍵を変更した場合は、`.env.voice` と各環境の `.env` の**両方**を合わせて更新してください。
