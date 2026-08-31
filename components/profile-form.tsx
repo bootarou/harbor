@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateProfile, type ProfileFormState } from "@/app/profile/actions";
 import { CoverImage } from "@/components/cover-image";
+import { UserAvatar } from "@/components/user-avatar";
 
 type ProfileInitial = {
   displayName: string;
@@ -152,12 +153,11 @@ export function ProfileForm({ initial }: { initial: ProfileInitial }) {
 
       <div className="flex items-center gap-4">
         {/* アバターは外部/相対の様々なドメインになり得るため next/image ではなく img を使用 */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={avatarUrl || "/avatar-placeholder.svg"}
+        <UserAvatar
+          src={avatarUrl}
           alt="アバター"
           className="h-20 w-20 rounded-full border border-gray-200 object-cover dark:border-gray-700"
-        />
+/>
         <div className="flex flex-col gap-2">
           <button
             type="button"

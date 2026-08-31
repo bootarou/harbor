@@ -6,6 +6,7 @@ import { PostCard } from "@/components/post-card";
 import { FeedChips } from "@/components/feed-chips";
 import { buildTippers, livePostWhere } from "@/lib/posts";
 import { htmlToText } from "@/lib/sanitize";
+import { UserAvatar } from "@/components/user-avatar";
 
 export const metadata = { title: "フォロー中" };
 
@@ -112,12 +113,11 @@ export default async function FeedPage() {
                 href={`/users/${u.id}`}
                 className="flex w-20 flex-col items-center gap-1.5 text-center"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={u.avatarUrl || "/avatar-placeholder.svg"}
+                <UserAvatar
+                  src={u.avatarUrl}
                   alt=""
                   className="h-16 w-16 rounded-full border border-gray-200 object-cover dark:border-gray-700"
-                />
+/>
                 <span className="line-clamp-2 text-xs text-gray-700 dark:text-gray-300">
                   {u.displayName}
                 </span>

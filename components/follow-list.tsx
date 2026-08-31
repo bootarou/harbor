@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FollowButton } from "@/components/follow-button";
+import { UserAvatar } from "@/components/user-avatar";
 
 export type FollowListUser = {
   id: string;
@@ -32,12 +33,11 @@ export function FollowList({
       {users.map((u) => (
         <li key={u.id} className="flex items-center gap-3 py-3">
           <Link href={`/users/${u.id}`} className="shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={u.avatarUrl || "/avatar-placeholder.svg"}
+            <UserAvatar
+              src={u.avatarUrl}
               alt=""
               className="h-11 w-11 rounded-full object-cover"
-            />
+/>
           </Link>
           <div className="min-w-0 flex-1">
             <Link

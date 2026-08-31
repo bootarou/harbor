@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatXym } from "@/lib/format";
 import { TipperAvatars, type TipperInfo } from "@/components/tip/tipper-avatars";
 import { statusMeta } from "@/lib/thanks-status";
+import { UserAvatar } from "@/components/user-avatar";
 
 export type PostCardData = {
   id: string;
@@ -128,12 +129,11 @@ export function PostCard({
           )}
           <div className="mt-auto pt-2">
             <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={post.author.avatarUrl || "/avatar-placeholder.svg"}
+              <UserAvatar
+                src={post.author.avatarUrl}
                 alt=""
                 className="h-4 w-4 rounded-full object-cover"
-              />
+/>
               <span className="truncate">{post.author.displayName}</span>
             </p>
             <p className="mt-1 text-[11px] text-gray-400">

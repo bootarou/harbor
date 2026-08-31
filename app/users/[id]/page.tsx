@@ -13,6 +13,7 @@ import { CoverImage } from "@/components/cover-image";
 import { StampCard } from "@/components/stamp/stamp-card";
 import { FollowButton } from "@/components/follow-button";
 import { ShareButtons } from "@/components/share-buttons";
+import { UserAvatar } from "@/components/user-avatar";
 
 function formatDate(d: Date): string {
   return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeZone: "Asia/Tokyo" }).format(d);
@@ -254,12 +255,11 @@ export default async function UserProfilePage({
 
       <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-800">
         <div className="flex items-center gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={user.avatarUrl || "/avatar-placeholder.svg"}
+          <UserAvatar
+            src={user.avatarUrl}
             alt=""
             className="h-16 w-16 shrink-0 rounded-full object-cover"
-          />
+/>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold">{user.displayName}</h1>

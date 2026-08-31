@@ -8,6 +8,7 @@ import { ThanksButtons } from "@/components/thanks-buttons";
 import { notificationText, notificationUrl } from "@/lib/notifications";
 import { NotificationSettings } from "@/components/notification-settings";
 import { explorerTxUrl } from "@/lib/explorer";
+import { UserAvatar } from "@/components/user-avatar";
 
 export const metadata = { title: "通知" };
 
@@ -141,12 +142,11 @@ export default async function NotificationsPage() {
                 <li key={r.id} className="flex flex-col gap-2 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2 text-sm">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={r.user.avatarUrl || "/avatar-placeholder.svg"}
+                      <UserAvatar
+                        src={r.user.avatarUrl}
                         alt=""
                         className="h-6 w-6 rounded-full object-cover"
-                      />
+/>
                       <span className="min-w-0">
                         <Link
                           href={`/users/${r.user.id}`}

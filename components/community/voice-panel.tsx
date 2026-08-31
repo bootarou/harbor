@@ -20,6 +20,7 @@ import type {
   VoiceParticipantMetadata,
   VoiceParticipantView,
 } from "@/lib/livekit";
+import { UserAvatar } from "@/components/user-avatar";
 
 // 音声スペースの行。チャット入力バーの「上の段」に常時表示し、
 // 未参加でも「いま誰が音声にいるか」が見えるようにする（横スクロール）。
@@ -182,12 +183,11 @@ function Chip({
       }`}
       title={`${displayName ?? "（無名）"}${isSpeaker ? "（発言できる）" : "（聴講中）"}`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={avatarUrl || "/avatar-placeholder.svg"}
+      <UserAvatar
+        src={avatarUrl}
         alt=""
         className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
-      />
+/>
       <span className="max-w-[6rem] truncate">
         {displayName ?? "（無名）"}
         {isSelf ? "（あなた）" : ""}

@@ -30,6 +30,7 @@ import { tipStatus } from "@/lib/tips/status";
 import { youtubeEmbedId, youtubeEmbedUrl } from "@/lib/youtube";
 import { tiktokEmbedId, tiktokEmbedUrl } from "@/lib/tiktok";
 import { absoluteUrl } from "@/lib/site";
+import { UserAvatar } from "@/components/user-avatar";
 
 function shortAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -648,12 +649,11 @@ export default async function PostDetailPage({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-sm">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={answer.author.avatarUrl || "/avatar-placeholder.svg"}
+                      <UserAvatar
+                        src={answer.author.avatarUrl}
                         alt=""
                         className="h-6 w-6 rounded-full object-cover"
-                      />
+/>
                       <Link
                         href={`/users/${answer.author.id}`}
                         className="font-medium hover:underline"
@@ -876,16 +876,11 @@ export default async function PostDetailPage({
                       </span>
                     );
                   })()}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={
-                      tip.anonymous
-                        ? "/avatar-placeholder.svg"
-                        : tip.fromUser?.avatarUrl || "/avatar-placeholder.svg"
-                    }
+                  <UserAvatar
+                    src={tip.anonymous ? null : tip.fromUser?.avatarUrl}
                     alt=""
                     className="h-6 w-6 shrink-0 rounded-full bg-gray-100 object-cover dark:bg-gray-800"
-                  />
+/>
                   <span className="flex items-center gap-1">
                     {tip.id === firstTipId && (
                       <span
@@ -931,12 +926,11 @@ export default async function PostDetailPage({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={comment.user.avatarUrl || "/avatar-placeholder.svg"}
+                    <UserAvatar
+                      src={comment.user.avatarUrl}
                       alt=""
                       className="h-6 w-6 rounded-full object-cover"
-                    />
+/>
                     <span className="font-medium">
                       {comment.user.displayName}
                     </span>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CommunityTickerItem } from "@/lib/community";
+import { UserAvatar } from "@/components/user-avatar";
 
 // トップの「コミュニティ」ティッカー。各トピックの最新メッセージを横に流し、
 // クリックでそのトピックへジャンプ。CSS のみで自動スクロール（ホバーで一時停止・
@@ -22,12 +23,11 @@ export function CommunityTicker({ items }: { items: CommunityTickerItem[] }) {
         )}
       </span>
       {/* ユーザーアイコン */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={it.userAvatar || "/avatar-placeholder.svg"}
+      <UserAvatar
+        src={it.userAvatar}
         alt=""
         className="h-5 w-5 shrink-0 rounded-full object-cover"
-      />
+/>
       <span className="max-w-[16rem] truncate text-gray-700 dark:text-gray-300">
         <span className="font-medium">{it.userName ?? "誰か"}</span>
         <span className="text-gray-400">: </span>

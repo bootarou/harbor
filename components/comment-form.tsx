@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { addComment, type CommentFormState } from "@/app/comments/actions";
+import { UserAvatar } from "@/components/user-avatar";
 
 const initialState: CommentFormState = {};
 
@@ -171,12 +172,11 @@ export function CommentForm({
                       : "hover:bg-gray-50 dark:hover:bg-gray-900"
                   }`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={c.avatarUrl || "/avatar-placeholder.svg"}
+                  <UserAvatar
+                    src={c.avatarUrl}
                     alt=""
                     className="h-5 w-5 rounded-full object-cover"
-                  />
+/>
                   <span className="truncate">{c.displayName}</span>
                 </button>
               </li>

@@ -21,6 +21,7 @@ import type { VoiceParticipantView } from "@/lib/livekit";
 import { CommunityTipButton } from "@/components/community/community-tip-button";
 import { TipTotal } from "@/components/community/tip-total";
 import { VoiceSpace } from "@/components/community/voice-space";
+import { UserAvatar } from "@/components/user-avatar";
 
 const POLL_MS = 45_000;
 
@@ -261,12 +262,11 @@ export function ChatRoom({
                 key={v.id}
                 className="flex items-center gap-1 rounded-full bg-gray-100 py-0.5 pl-0.5 pr-2 dark:bg-gray-800"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={v.avatarUrl || "/avatar-placeholder.svg"}
+                <UserAvatar
+                  src={v.avatarUrl}
                   alt=""
                   className="h-4 w-4 rounded-full object-cover"
-                />
+/>
                 <span className="max-w-[9rem] truncate">
                   {v.displayName ?? "（無名）"}
                   {v.id === currentUserId ? "（あなた）" : ""}
@@ -297,12 +297,11 @@ export function ChatRoom({
               key={m.id}
               className={`flex gap-2 sm:gap-3 ${mine ? "flex-row-reverse" : ""}`}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={m.user.avatarUrl || "/avatar-placeholder.svg"}
+              <UserAvatar
+                src={m.user.avatarUrl}
                 alt=""
                 className="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
-              />
+/>
               <div
                 className={`flex min-w-0 max-w-[80%] flex-col ${
                   mine ? "items-end" : "items-start"

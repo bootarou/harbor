@@ -2,6 +2,8 @@
 // 表示順は先着順（confirmedAt 昇順）。早く投げた人ほど左に並び、先頭には 👑 First Tipper バッジ。
 // サーバー/クライアントどちらからも使えるよう、ネイティブ title 属性でツールチップを出す。
 
+import { UserAvatar } from "@/components/user-avatar";
+
 export type TipperInfo = {
   userId: string | null;
   avatarUrl: string | null;
@@ -54,9 +56,8 @@ export function TipperAvatars({
   return (
     <span className="flex items-center">
       {shown.map((t, i) => {
-        const src = t.anonymous
-          ? "/avatar-placeholder.svg"
-          : t.avatarUrl || "/avatar-placeholder.svg";
+        // 匿名の投げ銭はアイコンを出さない（UserAvatar が null をプレースホルダー扱い）。
+        const src = t.anonymous ? null : t.avatarUrl;
         return (
           <span
             key={t.userId ?? `t-${i}`}
@@ -64,10 +65,8 @@ export function TipperAvatars({
             style={{ zIndex: i }}
             title={tooltipFor(t)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <UserAvatar
               src={src}
-              alt=""
               className={`${v.avatar} rounded-full bg-gray-100 object-cover ring-2 ring-white dark:bg-gray-800 dark:ring-gray-900`}
             />
             {t.isFirst && showCrown && (

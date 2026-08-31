@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserAvatar } from "@/components/user-avatar";
 
 type Author = {
   displayName: string;
@@ -21,20 +22,19 @@ export function AuthorCard({
       <div className="flex items-center gap-3">
         {userId ? (
           <Link href={`/users/${userId}`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={author.avatarUrl || "/avatar-placeholder.svg"}
+            <UserAvatar
+              src={author.avatarUrl}
               alt=""
               className="h-12 w-12 rounded-full object-cover"
-            />
+/>
           </Link>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={author.avatarUrl || "/avatar-placeholder.svg"}
+           
+          <UserAvatar
+            src={author.avatarUrl}
             alt=""
             className="h-12 w-12 rounded-full object-cover"
-          />
+/>
         )}
         <div className="min-w-0">
           <p className="font-semibold">

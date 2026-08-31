@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { UserAvatar } from "@/components/user-avatar";
 
 const SEEN_KEY = "nagexym.feedSeenAt";
 
@@ -96,12 +97,11 @@ export function FeedChips({
               className={`${CHIP_BASE} flex items-center gap-1.5 ${CHIP_INACTIVE}`}
               title={u.displayName}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={u.avatarUrl || "/avatar-placeholder.svg"}
+              <UserAvatar
+                src={u.avatarUrl}
                 alt=""
                 className="h-4 w-4 rounded-full object-cover"
-              />
+/>
               <span className="max-w-[8rem] truncate">{u.displayName}</span>
             </Link>
           ))}

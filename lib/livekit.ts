@@ -122,10 +122,22 @@ function isLivekitBackingOff(): boolean {
 }
 
 function noteLivekitFailure(): void {
+  // 復旧の見込みが立つまでログを繰り返さないよう、停止に入る瞬間だけ記録する。
+  // 「一時的にライブトークが遅かった/バッジが出なかった」を後から追えるようにする。
+  const wasHealthy = livekitDownUntil === 0;
   livekitDownUntil = Date.now() + LIVEKIT_FAILURE_BACKOFF_MS;
+  if (wasHealthy) {
+    console.warn(
+      `[livekit] 到達できないため ${LIVEKIT_FAILURE_BACKOFF_MS / 1000}秒間 ` +
+        "問い合わせを停止します（ライブトークの参加者表示・バッジは一時的に出ません）"
+    );
+  }
 }
 
 function noteLivekitSuccess(): void {
+  if (livekitDownUntil !== 0) {
+    console.info("[livekit] 到達を回復しました");
+  }
   livekitDownUntil = 0;
 }
 
