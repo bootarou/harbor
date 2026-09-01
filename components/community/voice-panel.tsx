@@ -256,6 +256,10 @@ export function VoiceDock({
   const [maxSpeakers, setMaxSpeakers] = useState(5);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 退出直後、サーバー側スナップショット（最大45秒前のポーリング結果）にはまだ
+  // 自分が含まれている。「本当に退出できたのか」と不安にさせるため、
+  // サーバーが追いつくまでの間は自分を表示から除く。
+  const [leftIdentity, setLeftIdentity] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
 
   // アンマウント時・ページ離脱時に必ず切断する（ゴースト参加者を残さない）。
@@ -268,10 +272,12 @@ export function VoiceDock({
     };
   }, []);
 
+
   const join = useCallback(async () => {
     if (joining || room) return;
     setError(null);
     setJoining(true);
+    setLeftIdentity(null);
     let pending: Room | null = null;
     try {
       const res = await fetch(`/api/community/${topicId}/voice-token`);
@@ -288,6 +294,9 @@ export function VoiceDock({
       // サーバー側から切断された（別タブでの参加・権限失効など）場合に状態を戻す。
       created.once(RoomEvent.Disconnected, () => {
         setRoom((cur) => (cur === created ? null : cur));
+        // 別タブでの参加や権限失効で切断された場合も、自分が残って見えないようにする。
+        const id = created.localParticipant.identity;
+        if (id) setLeftIdentity(id);
       });
       await created.connect(data.wsUrl, data.token);
       setRoom(created);
@@ -312,6 +321,9 @@ export function VoiceDock({
     const cur = room;
     setRoom(null);
     if (!cur) return;
+    // 先に自分を表示から除く（切断の完了やポーリングを待たせない）。
+    const identity = cur.localParticipant.identity;
+    if (identity) setLeftIdentity(identity);
     try {
       // 発言中なら権限を返してから抜ける（席を空ける）。
       if (cur.localParticipant.permissions?.canPublish) {
@@ -341,17 +353,23 @@ export function VoiceDock({
     );
   }
 
+  // 退出直後は自分を除いて表示する。ポーリングが追いつけば元々含まれなくなるため、
+  // このフィルタは自然に無効化される（解除処理は不要）。再参加時は join() でクリアする。
+  const visible = leftIdentity
+    ? snapshot.filter((p) => p.userId !== leftIdentity)
+    : snapshot;
+
   // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
     <div className="flex items-start gap-2">
       <RowLabel icon="🎧" />
-      {snapshot.length === 0 ? (
+      {visible.length === 0 ? (
         <span className="flex-1">
           <EmptyHint />
         </span>
       ) : (
         <ParticipantList>
-          {snapshot.map((p) => (
+          {visible.map((p) => (
             <Chip
               key={p.userId}
               displayName={p.displayName}
