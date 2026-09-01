@@ -262,7 +262,7 @@ function Chip({
         alt=""
         className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
 />
-      <span className="max-w-[9rem] truncate">
+      <span className="max-w-[11rem] truncate">
         {displayName ?? "（無名）"}
         {isSelf ? "（あなた）" : ""}
       </span>
@@ -271,41 +271,17 @@ function Chip({
   );
 }
 
-// 参加者リスト。人数が少ないうちは1行、増えたら折りたたむ。
-// 入力バーの上段に置いているため、際限なく縦に伸びるとチャットを圧迫する。
-// 既定は先頭数人＋「+N」で1行に収め、▾ で全員を折り返し表示に展開する。
-const COLLAPSED_LIMIT = 3;
-
+// 参加者リスト。
+// 横スクロールにすると、名前が長い場合に3人程度でも見切れてしまい読みづらい
+// （DID由来の表示名は長くなりやすい）。人数で折りたたむ方式も、
+// 「3人ちょうどだが収まらない」ようなケースを拾えないため採らない。
+// 常に折り返して行を増やし、増えすぎた場合だけ縦スクロールで頭打ちにする。
+// 入力バーの上段なので、際限なく伸びるとチャットを圧迫するため上限は必要。
 function ParticipantList({ children }: { children: React.ReactNode[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const total = children.length;
-  const overflow = total - COLLAPSED_LIMIT;
-  const canCollapse = overflow > 0;
-  const shown = expanded || !canCollapse ? children : children.slice(0, COLLAPSED_LIMIT);
-
   return (
-    <div className="flex min-w-0 flex-1 items-start gap-1.5">
-      <ul
-        className={`flex min-w-0 flex-1 items-center gap-1.5 py-0.5 ${
-          expanded
-            ? "max-h-24 flex-wrap overflow-y-auto"
-            : "overflow-x-auto"
-        }`}
-      >
-        {shown}
-      </ul>
-      {canCollapse && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          title={expanded ? "参加者リストを畳む" : `全${total}人を表示`}
-          className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          {expanded ? "畳む ▴" : `+${overflow} ▾`}
-        </button>
-      )}
-    </div>
+    <ul className="flex max-h-24 min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-y-auto py-0.5">
+      {children}
+    </ul>
   );
 }
 
