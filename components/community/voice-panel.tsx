@@ -155,7 +155,7 @@ function RowLabel({ icon }: { icon: string }) {
   return (
     <span className="flex shrink-0 items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
       <span aria-hidden="true">{icon}</span>
-      <span className="hidden sm:inline">harborTalk</span>
+      <span className="hidden sm:inline">harborトーク</span>
     </span>
   );
 }
@@ -241,7 +241,7 @@ export function VoiceDock({
         | (Partial<TokenResponse> & { error?: string })
         | null;
       if (!res.ok || !data?.token || !data.wsUrl) {
-        setError(data?.error ?? "harborTalkに接続できませんでした");
+        setError(data?.error ?? "harborトークに接続できませんでした");
         return;
       }
       if (typeof data.maxSpeakers === "number") setMaxSpeakers(data.maxSpeakers);
@@ -261,7 +261,7 @@ export function VoiceDock({
     } catch (e) {
       console.error("voice join error", e);
       setError(
-        "harborTalkに接続できませんでした（サーバーの設定・ネットワークをご確認ください）"
+        "harborトークに接続できませんでした（サーバーの設定・ネットワークをご確認ください）"
       );
     } finally {
       // connect に失敗した Room は破棄する。
@@ -331,8 +331,8 @@ export function VoiceDock({
         type="button"
         onClick={() => void join()}
         disabled={joining}
-        title="harborTalkに参加（聴くだけでもOK）"
-        aria-label="harborTalkに参加。聴くだけでも参加できます"
+        title="harborトークに参加（聴くだけでもOK）"
+        aria-label="harborトークに参加。聴くだけでも参加できます"
         className={`${ROW_BUTTON} bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200`}
       >
         {joining ? "接続中…" : "参加"}

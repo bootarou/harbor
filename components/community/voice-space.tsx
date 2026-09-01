@@ -16,7 +16,7 @@ const VoiceDock = dynamic(
       <div className="flex items-center gap-2 py-0.5">
         <span className="flex items-center gap-1 text-xs text-gray-400">
           <span aria-hidden="true">🎧</span>
-          <span className="hidden sm:inline">harborTalk</span>
+          <span className="hidden sm:inline">harborトーク</span>
         </span>
       </div>
     ),

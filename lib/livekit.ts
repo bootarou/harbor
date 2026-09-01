@@ -322,7 +322,7 @@ export async function setSpeaker(
     if (!me) {
       return {
         ok: false as const,
-        error: "harborTalkに参加していません",
+        error: "harborトークに参加していません",
         status: 409,
       };
     }
