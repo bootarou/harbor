@@ -21,6 +21,7 @@ import type { VoiceParticipantView } from "@/lib/livekit";
 import { CommunityTipButton } from "@/components/community/community-tip-button";
 import { TipTotal } from "@/components/community/tip-total";
 import { VoiceSpace } from "@/components/community/voice-space";
+import { ScreenDockContext } from "@/components/community/screen-dock";
 import { UserAvatar } from "@/components/user-avatar";
 
 const POLL_MS = 45_000;
@@ -97,6 +98,10 @@ export function ChatRoom({
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [imgUploading, setImgUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // 画面共有の描画先。VoicePanel からポータルで差し込まれる。
+  // ref ではなくコールバック ref + state にして、要素が用意できた時点で
+  // 子（VoicePanel）へ伝わるようにする。
+  const [screenDock, setScreenDock] = useState<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // 重複を避けつつ新着を末尾に追加する。
@@ -248,6 +253,7 @@ export function ChatRoom({
   }
 
   return (
+    <ScreenDockContext.Provider value={screenDock}>
     <div className="flex min-h-[65vh] flex-col">
       {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。 */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs dark:border-gray-800">
@@ -283,7 +289,9 @@ export function ChatRoom({
       </div>
 
       {/* メッセージ一覧（下が最新）。flex-1 で伸ばし、入力欄を下部へ押し出す。 */}
-      <ul className="flex flex-1 flex-col gap-4 pb-4">
+      {/* PC は本文と画面共有を横並び、スマホは上下に積む。 */}
+      <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start">
+      <ul className="flex min-w-0 flex-1 flex-col gap-4 pb-4">
         {messages.length === 0 && (
           <li className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
             まだメッセージがありません。最初の一言をどうぞ。
@@ -395,6 +403,14 @@ export function ChatRoom({
         })}
         <div ref={bottomRef} />
       </ul>
+
+      {/* 画面共有のドック。中身が無いときは empty:hidden で場所を取らない。
+          PC では本文の右に固定幅で並び、スクロールしても見えるよう sticky にする。 */}
+      <div
+        ref={setScreenDock}
+        className="w-full empty:hidden lg:sticky lg:top-4 lg:w-[440px] lg:shrink-0 xl:w-[560px]"
+      />
+      </div>
 
       {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る） */}
       {currentUserId ? (
@@ -555,5 +571,6 @@ export function ChatRoom({
         </div>
       )}
     </div>
+    </ScreenDockContext.Provider>
   );
 }

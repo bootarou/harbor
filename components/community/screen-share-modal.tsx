@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { TrackEvent } from "livekit-client";
 import type { TrackReference } from "@livekit/components-react";
+import { useScreenDock } from "@/components/community/screen-dock";
 
 // 画面共有の視聴モーダル。
 // 「画面を見る」を押したときだけ開く。閉じても共有者側の配信は止まらない
@@ -22,6 +23,8 @@ export function ScreenShareModal({
   sharerName: string;
   onClose: () => void;
 }) {
+  const dock = useScreenDock();
+
   // Esc で閉じる。ただし全画面表示中は、ブラウザが全画面解除に使うため閉じない
   // （解除と同時にモーダルまで消えると意図しない挙動になる）。
   useEffect(() => {
@@ -34,13 +37,19 @@ export function ScreenShareModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // ポータル先は body。このコンポーネントは voice-space.tsx から ssr:false で
-  // 読み込まれるが、念のため document の有無を見てから描画する。
+  // 通常はチャットが用意したドックへ描画し、本文の横（PC）／下（スマホ）に置く。
+  // ドックが取得できない場合のみ body へ出す（従来のオーバーレイ相当）。
   if (typeof document === "undefined") return null;
+  const target = dock ?? document.body;
 
   return createPortal(
-    <ModalBody trackRef={trackRef} sharerName={sharerName} onClose={onClose} />,
-    document.body
+    <ModalBody
+      trackRef={trackRef}
+      sharerName={sharerName}
+      onClose={onClose}
+      docked={dock !== null}
+    />,
+    target
   );
 }
 
@@ -51,10 +60,13 @@ function ModalBody({
   trackRef,
   sharerName,
   onClose,
+  docked,
 }: {
   trackRef: TrackReference;
   sharerName: string;
   onClose: () => void;
+  /** チャット内へ埋め込む表示か（false なら画面全体を覆うオーバーレイ）。 */
+  docked: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -125,23 +137,18 @@ function ModalBody({
     };
   }, [track]);
 
-  return (
+  const box = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${sharerName}さんの画面共有`}
-      onClick={onClose}
-    >
-      <div
-        ref={boxRef}
-        className={`flex flex-col overflow-hidden bg-gray-900 shadow-xl ${
-          isFullscreen
-            ? "h-screen w-screen rounded-none"
+      ref={boxRef}
+      className={`flex flex-col overflow-hidden bg-gray-900 shadow-lg ${
+        isFullscreen
+          ? "h-screen w-screen rounded-none"
+          : docked
+            ? "w-full rounded-lg"
             : "max-h-full w-full max-w-6xl rounded-lg"
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-700 px-4 py-2">
           <p className="truncate text-sm font-medium text-white">
             🖥 {sharerName}さんの画面共有
@@ -172,7 +179,12 @@ function ModalBody({
             モバイルでは画面幅に、PCでは高さに追従する。 */}
         <div
           className={`relative w-full bg-black ${
-            isFullscreen ? "min-h-0 flex-1" : "h-[80vh]"
+            isFullscreen
+              ? "min-h-0 flex-1"
+              : docked
+                ? // 埋め込み時は 16:9 で収める。チャットの高さを奪いすぎない。
+                  "aspect-video"
+                : "h-[80vh]"
           }`}
         >
           <video
@@ -190,7 +202,21 @@ function ModalBody({
             </p>
           )}
         </div>
-      </div>
+    </div>
+  );
+
+  // 全画面中は box 自身が画面を占めるので、オーバーレイで包まない。
+  if (docked || isFullscreen) return box;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${sharerName}さんの画面共有`}
+      onClick={onClose}
+    >
+      {box}
     </div>
   );
 }
