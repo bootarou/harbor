@@ -418,25 +418,31 @@ export function VoiceDock({
 
   // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
-    <div className="flex items-start gap-2">
-      <RowLabel icon="🎧" />
-      {visible.length === 0 ? (
-        <span className="flex-1">
-          <EmptyHint />
-        </span>
-      ) : (
-        <ParticipantList>
-          {visible.map((p) => (
-            <Chip
-              key={p.userId}
-              displayName={p.displayName}
-              avatarUrl={p.avatarUrl}
-              isSpeaker={p.isSpeaker}
-              isSelf={false}
-            />
-          ))}
-        </ParticipantList>
-      )}
+    // スマホでは横並びだと窮屈なので、参加者リストと操作ボタンを段に分ける。
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        <RowLabel icon="🎧" />
+        {visible.length === 0 ? (
+          <span className="flex-1">
+            <EmptyHint />
+          </span>
+        ) : (
+          <ParticipantList>
+            {visible.map((p) => (
+              <Chip
+                key={p.userId}
+                displayName={p.displayName}
+                avatarUrl={p.avatarUrl}
+                isSpeaker={p.isSpeaker}
+                isSelf={false}
+              />
+            ))}
+          </ParticipantList>
+        )}
+      </div>
+
+      {/* 操作類。スマホでは次の行へ回す。要素が増えても折り返せるようにする。 */}
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
       {sharer && (
         <span
           className="flex shrink-0 items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
@@ -468,7 +474,8 @@ export function VoiceDock({
         className={`${ROW_BUTTON} bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200`}
       >
         {joining ? "接続中…" : "参加"}
-      </button>
+        </button>
+      </div>
     </div>
   );
 }
@@ -668,18 +675,23 @@ function VoiceRowConnected({
   }
 
   return (
-    <div className="flex items-start gap-2">
-      <RowLabel icon={canPublish ? "🎙" : "🎧"} />
-      <ParticipantList>
-        {participants.map((p) => (
-          <LiveChip
-            key={p.identity || p.sid}
-            participant={p}
-            isSelf={p.identity === localParticipant.identity}
-          />
-        ))}
-      </ParticipantList>
+    // スマホでは横並びだと窮屈なので、参加者リストと操作ボタンを段に分ける。
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <RowLabel icon={canPublish ? "🎙" : "🎧"} />
+        <ParticipantList>
+          {participants.map((p) => (
+            <LiveChip
+              key={p.identity || p.sid}
+              participant={p}
+              isSelf={p.identity === localParticipant.identity}
+            />
+          ))}
+        </ParticipantList>
+        </div>
 
+        {/* 操作類。スマホでは次の行へ回す。要素が増えても折り返せるようにする。 */}
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
       {connectionState !== ConnectionState.Connected && (
         <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
           再接続中…
@@ -752,7 +764,8 @@ function VoiceRowConnected({
         className={`${ROW_BUTTON} border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800`}
       >
         退出
-      </button>
+        </button>
+        </div>
 
       {/* 視聴モーダル。閉じても共有者側の配信は止まらない。 */}
       {viewing && screenTrack && (
