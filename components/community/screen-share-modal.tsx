@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { TrackEvent } from "livekit-client";
 import type { TrackReference } from "@livekit/components-react";
 
 // 画面共有の視聴モーダル。
@@ -94,8 +95,24 @@ function ModalBody({
         "webkitEnterFullscreen" in HTMLVideoElement.prototype));
 
   // 遅延購読のため、モーダルを開いた直後はまだトラックが届いていない。
-  // 届いた時点で attach したいので、track 自体を依存に入れる。
-  const track = trackRef.publication?.track;
+  // useTracks は TrackSubscribed を監視していないので、購読が成立しても
+  // 再描画されず映像が出ないままになる。publication のイベントを直接見て、
+  // 届いた時点で描画し直す。
+  const pub = trackRef.publication;
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (!pub) return;
+    const bump = () => forceUpdate((n) => n + 1);
+    pub.on(TrackEvent.Subscribed, bump);
+    pub.on(TrackEvent.Unsubscribed, bump);
+    return () => {
+      pub.off(TrackEvent.Subscribed, bump);
+      pub.off(TrackEvent.Unsubscribed, bump);
+    };
+  }, [pub]);
+
+  // 描画時に最新の track を読む（イベントで再描画されるため取りこぼさない）。
+  const track = pub?.track;
 
   // トラックを <video> に接続する。閉じたら必ず切り離す
   // （detach を忘れると裏で描画が続き、無駄な負荷になる）。

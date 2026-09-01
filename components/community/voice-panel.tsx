@@ -541,16 +541,22 @@ function VoiceRowConnected({
   // 購読したままだと、モーダルを開いていない人にも映像が流れ続けて帯域を食う。
   // 音声1本が約40kbps なのに対し画面共有は1.2Mbps あり、影響が大きい。
   // 「画面を見る」を開いている間だけ購読し、閉じたら解除する。
+  //
+  // 依存には publication を使うこと。useTracks は毎レンダーで新しい
+  // TrackReference オブジェクトを作るため、screenTrack を依存に置くと
+  // 購読と解除が延々と繰り返され、映像が永久に届かない。
+  // publication は participant が保持する同一インスタンスなので安定している。
+  const screenPub = screenTrack?.publication;
   useEffect(() => {
-    const pub = screenTrack?.publication;
     // 自分が発行しているトラック（LocalTrackPublication）は購読の対象外。
-    if (!(pub instanceof RemoteTrackPublication)) return;
-    pub.setSubscribed(viewing);
+    if (!(screenPub instanceof RemoteTrackPublication)) return;
+    // 既に望む状態なら呼ばない（不要な往復とチラつきを避ける）。
+    if (screenPub.isDesired !== viewing) screenPub.setSubscribed(viewing);
     return () => {
       // 別の共有へ切り替わった・退出したときに購読を残さない。
-      pub.setSubscribed(false);
+      if (screenPub.isDesired) screenPub.setSubscribed(false);
     };
-  }, [screenTrack, viewing]);
+  }, [screenPub, viewing]);
 
   // ブラウザ標準の「共有を停止」で終了された場合も検知して、
   // サーバー側のロックを解放する（要件10）。
