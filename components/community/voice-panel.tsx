@@ -6,8 +6,12 @@ import {
   ParticipantEvent,
   Room,
   RoomEvent,
+  Track,
 } from "livekit-client";
 import type { LocalParticipant, Participant } from "livekit-client";
+// canPublishSources はプロトコル定義の enum。livekit-client は再エクスポート
+// していないため、依存に含まれる @livekit/protocol から直接取り込む。
+import { TrackSource } from "@livekit/protocol";
 import {
   RoomAudioRenderer,
   RoomContext,
@@ -15,11 +19,13 @@ import {
   useIsSpeaking,
   useLocalParticipant,
   useParticipants,
+  useTracks,
 } from "@livekit/components-react";
 import type {
   VoiceParticipantMetadata,
   VoiceParticipantView,
 } from "@/lib/livekit";
+import { ScreenShareModal } from "@/components/community/screen-share-modal";
 import { UserAvatar } from "@/components/user-avatar";
 
 // 音声スペースの行。チャット入力バーの「上の段」に常時表示し、
@@ -145,6 +151,44 @@ async function logIceDiagnostics(room: Room): Promise<void> {
     console.debug("[harborTalk] ICE 診断を取得できませんでした", e);
   }
 }
+
+/**
+ * 画面共有の publish 権限がサーバー→LiveKit 経由で届くのを待つ。
+ * マイクと同じく、権限が届く前に publish すると弾かれる。
+ */
+function waitForScreenSharePermission(
+  participant: LocalParticipant,
+  timeoutMs = 5_000
+): Promise<boolean> {
+  const allowed = () =>
+    participant.permissions?.canPublishSources?.includes(
+      TrackSource.SCREEN_SHARE
+    ) ?? false;
+  if (allowed()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = (granted: boolean) => {
+      window.clearTimeout(timer);
+      participant.off(ParticipantEvent.ParticipantPermissionsChanged, onChange);
+      resolve(granted);
+    };
+    const onChange = () => {
+      if (allowed()) finish(true);
+    };
+    const timer = window.setTimeout(() => finish(false), timeoutMs);
+    participant.on(ParticipantEvent.ParticipantPermissionsChanged, onChange);
+  });
+}
+
+// 画面共有の取り込み設定。動画配信ではなく資料・コードを見せる用途なので、
+// フレームレートを抑えて解像度（＝文字の可読性）に帯域を回す。
+const SCREEN_CAPTURE = {
+  resolution: { width: 1280, height: 720, frameRate: 10 },
+  audio: false,
+} as const;
+// publish 側でも上限を揃える。動きが少ない画面なので低ビットレートで足りる。
+const SCREEN_PUBLISH = {
+  screenShareEncoding: { maxBitrate: 1_200_000, maxFramerate: 10 },
+} as const;
 
 // 行の右端に置く操作ボタンの基本クラス。
 const ROW_BUTTON =
@@ -421,6 +465,98 @@ function VoiceRowConnected({
   ).length;
   const full = !canPublish && speakers >= maxSpeakers;
 
+  // 画面共有トラック。ルーム内で同時に1つだけという前提なので先頭を見る。
+  const screenTracks = useTracks([Track.Source.ScreenShare]);
+  const screenTrack = screenTracks[0];
+  const sharerIdentity = screenTrack?.participant.identity ?? null;
+  const iAmSharing = sharerIdentity === localParticipant.identity;
+  const someoneElseSharing = sharerIdentity !== null && !iAmSharing;
+  const sharerName = screenTrack ? displayNameOf(screenTrack.participant) : "";
+  const [screenPending, setScreenPending] = useState(false);
+  const [viewing, setViewing] = useState(false);
+
+  // 共有が終わったら視聴モーダルも閉じる（トラックが消えた後に空枠を残さない）。
+  const hasScreenTrack = screenTrack !== undefined;
+  if (viewing && !hasScreenTrack) setViewing(false);
+
+  // ブラウザ標準の「共有を停止」で終了された場合も検知して、
+  // サーバー側のロックを解放する（要件10）。
+  useEffect(() => {
+    if (!iAmSharing) return;
+    const pub = screenTrack?.publication;
+    const track = pub?.track;
+    if (!track) return;
+    const onEnded = () => {
+      void fetch(`/api/community/${topicId}/voice-screenshare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ share: false }),
+      }).catch(() => undefined);
+    };
+    track.on("ended", onEnded);
+    return () => {
+      track.off("ended", onEnded);
+    };
+  }, [iAmSharing, screenTrack, topicId]);
+
+  async function toggleScreenShare() {
+    if (screenPending) return;
+    setError(null);
+    setScreenPending(true);
+    const start = !iAmSharing;
+    try {
+      if (!start) {
+        await localParticipant.setScreenShareEnabled(false);
+        await fetch(`/api/community/${topicId}/voice-screenshare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ share: false }),
+        }).catch(() => undefined);
+        return;
+      }
+
+      // 先にサーバーへロックを要求する（同時押しはここで弾かれる）。
+      const res = await fetch(`/api/community/${topicId}/voice-screenshare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ share: true }),
+      });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setError(data?.error ?? "画面共有を開始できませんでした");
+        return;
+      }
+
+      try {
+        // 権限の反映を待ってから publish する（届く前に出すと弾かれる）。
+        await waitForScreenSharePermission(localParticipant);
+        await localParticipant.setScreenShareEnabled(
+          true,
+          SCREEN_CAPTURE,
+          SCREEN_PUBLISH
+        );
+      } catch (e) {
+        // ロック取得後に publish が失敗（選択のキャンセル・権限拒否など）したら
+        // 必ずロックを解放する。放置すると誰も共有できなくなる（要件18）。
+        await fetch(`/api/community/${topicId}/voice-screenshare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ share: false }),
+        }).catch(() => undefined);
+        const canceled =
+          e instanceof DOMException &&
+          (e.name === "NotAllowedError" || e.name === "AbortError");
+        // 選択ダイアログのキャンセルはエラー表示しない（ユーザーの意図的な操作）。
+        if (!canceled) {
+          console.error("screen share publish error", e);
+          setError("画面共有を開始できませんでした");
+        }
+      }
+    } finally {
+      setScreenPending(false);
+    }
+  }
+
   // 発言権を失ったらマイクを確実に落とす（権限変更はサーバー→LiveKit 経由で届く）。
   useEffect(() => {
     if (canPublish) return;
@@ -503,6 +639,35 @@ function VoiceRowConnected({
         </span>
       )}
 
+      {/* 他の人が共有中: 任意で見る。押すまで映像は表示しない（音声だけで聴き続けられる）。 */}
+      {someoneElseSharing && (
+        <button
+          type="button"
+          onClick={() => setViewing(true)}
+          title={`${sharerName}さんが画面を共有しています`}
+          className={`${ROW_BUTTON} bg-indigo-100 text-indigo-800 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-200`}
+        >
+          🖥 画面を見る
+        </button>
+      )}
+
+      {/* 発言権を持つ人だけが共有できる。他の人が共有中は出さない。 */}
+      {canPublish && !someoneElseSharing && (
+        <button
+          type="button"
+          onClick={() => void toggleScreenShare()}
+          disabled={screenPending}
+          title={iAmSharing ? "画面共有を停止" : "画面を共有する"}
+          className={`${ROW_BUTTON} ${
+            iAmSharing
+              ? "bg-indigo-600 text-white hover:bg-indigo-500"
+              : "border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          }`}
+        >
+          {iAmSharing ? "🖥 共有を停止" : "🖥 画面共有"}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => void toggleSpeaker()}
@@ -533,6 +698,15 @@ function VoiceRowConnected({
       >
         退出
       </button>
+
+      {/* 視聴モーダル。閉じても共有者側の配信は止まらない。 */}
+      {viewing && screenTrack && (
+        <ScreenShareModal
+          trackRef={screenTrack}
+          sharerName={sharerName}
+          onClose={() => setViewing(false)}
+        />
+      )}
     </div>
   );
 }

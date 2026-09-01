@@ -321,3 +321,10 @@ export const voiceSpeakerSchema = z.object({
 });
 
 export type VoiceSpeakerInput = z.infer<typeof voiceSpeakerSchema>;
+
+// 画面共有の開始／停止（true=開始 / false=停止）。
+export const voiceScreenShareSchema = z.object({
+  share: z.boolean(),
+});
+
+export type VoiceScreenShareInput = z.infer<typeof voiceScreenShareSchema>;

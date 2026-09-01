@@ -166,6 +166,18 @@ const SPEAKER_PERMISSION: Partial<ParticipantPermission> = {
   canUpdateMetadata: false,
 };
 
+// 画面共有中のスピーカー。マイクに加えて画面共有のみ許可する（カメラは不可）。
+// 共有ロックを持つ人にだけこの権限を与えることで、同時1人をサーバー側で強制する。
+const SCREEN_SHARER_PERMISSION: Partial<ParticipantPermission> = {
+  canSubscribe: true,
+  canPublish: true,
+  canPublishData: true,
+  canPublishSources: [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+  hidden: false,
+  recorder: false,
+  canUpdateMetadata: false,
+};
+
 const LISTENER_PERMISSION: Partial<ParticipantPermission> = {
   canSubscribe: true,
   canPublish: false,
@@ -300,6 +312,114 @@ function withRoomLock<T>(room: string, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+// ── 画面共有の排他制御 ──────────────────────────────────────────
+// 真実の情報源は LiveKit に publish されている ScreenShare トラック。
+// 参加者が切断されればトラックも消えるため、ロックが残留しない。
+// ただし「開始要求 → publish 完了」の間はトラックがまだ無く、2人が同時に
+// 押すと両方が通ってしまう。その窓だけをインメモリの予約で塞ぐ。
+// （ratelimit / presence と同じく単一サーバー前提）
+const SCREEN_RESERVATION_TTL = 15_000;
+const screenReservations = new Map<
+  string,
+  { identity: string; at: number }
+>();
+
+function activeReservation(room: string): string | null {
+  const r = screenReservations.get(room);
+  if (!r) return null;
+  if (Date.now() - r.at > SCREEN_RESERVATION_TTL) {
+    screenReservations.delete(room);
+    return null;
+  }
+  return r.identity;
+}
+
+/** 実際に ScreenShare トラックを publish している参加者の identity。 */
+function publishedSharer(participants: ParticipantInfo[]): string | null {
+  for (const p of participants) {
+    if (p.tracks?.some((t) => t.source === TrackSource.SCREEN_SHARE)) {
+      return p.identity;
+    }
+  }
+  return null;
+}
+
+export type ScreenShareState = {
+  /** 共有中（または開始処理中）の identity。誰も共有していなければ null。 */
+  identity: string | null;
+};
+
+/** ルームの画面共有状況（表示用）。 */
+export async function getScreenShareState(
+  cfg: LivekitConfig,
+  topicId: string
+): Promise<ScreenShareState> {
+  const participants = await listVoiceParticipants(cfg, topicId);
+  return { identity: publishedSharer(participants) ?? activeReservation(voiceRoomName(topicId)) };
+}
+
+export type ScreenShareResult =
+  | { ok: true; identity: string | null }
+  | { ok: false; error: string; status: number };
+
+/**
+ * 画面共有の開始／停止。開始は「誰も共有していない」ときだけ許可し、
+ * 許可した相手にだけ SCREEN_SHARE の publish 権限を与える。
+ * 権限で縛っているため、ロックを持たない参加者は publish 自体ができない。
+ */
+export async function setScreenShare(
+  cfg: LivekitConfig,
+  topicId: string,
+  userId: string,
+  share: boolean
+): Promise<ScreenShareResult> {
+  const room = voiceRoomName(topicId);
+  return withRoomLock(room, async () => {
+    const svc = getRoomService(cfg);
+    const participants = await listVoiceParticipants(cfg, topicId);
+    const me = participants.find((p) => p.identity === userId);
+    if (!me) {
+      return { ok: false as const, error: "harborトークに参加していません", status: 409 };
+    }
+
+    if (!share) {
+      // 停止: 予約を解放し、権限をマイクのみに戻す（publish 中なら LiveKit が落とす）。
+      if (screenReservations.get(room)?.identity === userId) {
+        screenReservations.delete(room);
+      }
+      if (isSpeaker(me)) {
+        await svc.updateParticipant(room, userId, { permission: SPEAKER_PERMISSION });
+      }
+      return { ok: true as const, identity: null };
+    }
+
+    // 開始には発言権が必要（発言できる人だけが画面共有できる）。
+    if (!isSpeaker(me)) {
+      return { ok: false as const, error: "発言中のみ画面共有できます", status: 403 };
+    }
+
+    const current = publishedSharer(participants) ?? activeReservation(room);
+    if (current && current !== userId) {
+      return {
+        ok: false as const,
+        error: "現在ほかのユーザーが画面を共有しています",
+        status: 409,
+      };
+    }
+
+    screenReservations.set(room, { identity: userId, at: Date.now() });
+    await svc.updateParticipant(room, userId, { permission: SCREEN_SHARER_PERMISSION });
+    return { ok: true as const, identity: userId };
+  });
+}
+
+/** 発言権を失う・退出する際にロックを取りこぼさないための後始末。 */
+function releaseScreenReservation(room: string, userId: string): void {
+  if (screenReservations.get(room)?.identity === userId) {
+    screenReservations.delete(room);
+  }
+}
+
 export type SpeakerResult =
   | { ok: true; speakers: number }
   | { ok: false; error: string; status: number };
@@ -328,6 +448,9 @@ export async function setSpeaker(
     }
 
     if (!speak) {
+      // 発言権を失うと画面共有もできない。ロックを残さないよう必ず解放する
+      // （権限が LISTENER になるため LiveKit 側も publish 中のトラックを落とす）。
+      releaseScreenReservation(room, userId);
       if (isSpeaker(me)) {
         await svc.updateParticipant(room, userId, { permission: LISTENER_PERMISSION });
       }
@@ -336,7 +459,8 @@ export async function setSpeaker(
     }
 
     if (isSpeaker(me)) {
-      // すでにスピーカー（多重クリック等）。現状をそのまま返す。
+      // すでにスピーカー（多重クリック等）。権限を上書きすると画面共有中の
+      // SCREEN_SHARE 権限を奪ってしまうため、何もせず現状を返す。
       return { ok: true as const, speakers: participants.filter(isSpeaker).length };
     }
     const current = participants.filter(isSpeaker).length;
