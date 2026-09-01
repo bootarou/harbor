@@ -25,6 +25,8 @@ import { ScreenDockContext } from "@/components/community/screen-dock";
 import { UserAvatar } from "@/components/user-avatar";
 
 const POLL_MS = 45_000;
+// harborトークが行われている間は会話が動くため、チャットの取得間隔を短くする。
+const POLL_MS_ACTIVE = 12_000;
 
 // 画面共有ドックの幅（PC）。ドラッグで調整でき、端末ごとに記憶する。
 // 既定は比率にしている。固定 px だと画面が小さいときに本文が潰れてしまうため。
@@ -177,11 +179,21 @@ export function ChatRoom({
 
   // 差分ポーリング（表示中・フォーカス時のみ）。新着メッセージ取得＋オンライン更新を兼ねる。
   // メッセージが無いトピックでもプレゼンス（在室）を更新するため、after 無しでも必ず叩く。
+  // poll の依存から messages を外すための参照。
+  // 依存に入れると、メッセージ送信・投げ銭・削除のたびに poll が作り直され、
+  // 下の useEffect が走ってタイマーが 0 から再起動する。
+  // 会話が続いている間は再起動が繰り返され、取得が先送りされ続けていた。
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const poll = useCallback(async () => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
-    const last = messages[messages.length - 1]?.createdAt;
+    const current = messagesRef.current;
+    const last = current[current.length - 1]?.createdAt;
     const qs = last ? `?after=${encodeURIComponent(last)}` : "";
     try {
       const res = await fetch(`/api/community/${topicId}/messages${qs}`);
@@ -211,10 +223,14 @@ export function ChatRoom({
     } catch {
       /* ignore */
     }
-  }, [messages, topicId, appendMessages]);
+  }, [topicId, appendMessages]);
+
+  // harborトークが行われている間は会話が動くため、取得間隔を短くする。
+  // 45秒のままだと、通話しながらのチャットが極端に遅れて見える。
+  const pollMs = voice.length > 0 ? POLL_MS_ACTIVE : POLL_MS;
 
   useEffect(() => {
-    const timer = window.setInterval(poll, POLL_MS);
+    const timer = window.setInterval(poll, pollMs);
     const onVisible = () => {
       if (document.visibilityState === "visible") void poll();
     };
@@ -225,7 +241,7 @@ export function ChatRoom({
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [poll]);
+  }, [poll, pollMs]);
 
   // 新着で最下部へスクロール。
   useEffect(() => {
