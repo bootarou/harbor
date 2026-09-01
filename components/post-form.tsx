@@ -331,15 +331,91 @@ export function PostForm({ initial }: { initial: PostInitial }) {
       const font =
         '"Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, "Helvetica Neue", Arial, sans-serif';
 
-      // 背景: Harbor ブランドのティールのグラデーション。
-      const grad = ctx.createLinearGradient(0, 0, W, H);
-      grad.addColorStop(0, "#02c39a");
-      grad.addColorStop(1, "#015c49");
+      // 背景: 空から海へ抜けるスカイブルーのグラデーション。
+      // 単色2点だと平坦になるので、中間色を挟んで奥行きを出す。
+      const grad = ctx.createLinearGradient(0, 0, W * 0.35, H);
+      grad.addColorStop(0, "#7dd3fc"); // 空の浅い水色
+      grad.addColorStop(0.45, "#38bdf8");
+      grad.addColorStop(0.78, "#0284c7");
+      grad.addColorStop(1, "#075985"); // 海の深い青
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
 
+      // 右上からの光。中心をずらした放射グラデーションで、
+      // 平面的なベタ塗りに立体感を与える。
+      const glow = ctx.createRadialGradient(
+        W * 0.82,
+        H * 0.12,
+        0,
+        W * 0.82,
+        H * 0.12,
+        W * 0.75
+      );
+      glow.addColorStop(0, "rgba(255,255,255,0.42)");
+      glow.addColorStop(0.35, "rgba(255,255,255,0.12)");
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, W, H);
+
+      // 波紋。同心円の弧を薄く重ねて、水面を思わせる質感を作る。
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 7; i++) {
+        ctx.beginPath();
+        ctx.arc(W * 0.12, H * 1.02, 150 + i * 78, Math.PI * 1.15, Math.PI * 1.9);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 光の粒（ボケ）。大小の円を薄く散らして、単調なグラデーションに
+      // 華やかさと奥行きを与える。文字が乗る左下は避けて配置する。
+      const bokeh: Array<[number, number, number, number]> = [
+        // x比率, y比率, 半径, 不透明度
+        [0.9, 0.2, 96, 0.16],
+        [0.78, 0.42, 54, 0.13],
+        [0.95, 0.58, 38, 0.1],
+        [0.66, 0.16, 30, 0.14],
+        [0.85, 0.78, 62, 0.08],
+        [0.55, 0.3, 20, 0.12],
+      ];
+      for (const [rx, ry, r, alpha] of bokeh) {
+        const cx = W * rx;
+        const cy = H * ry;
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+        g.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 上辺のハイライト。額の内側に光の線を一本入れて締める。
+      const topLine = ctx.createLinearGradient(0, 0, W, 0);
+      topLine.addColorStop(0, "rgba(255,255,255,0)");
+      topLine.addColorStop(0.5, "rgba(255,255,255,0.35)");
+      topLine.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = topLine;
+      ctx.fillRect(0, 0, W, 3);
+
+      // 下辺の沈み込み。文字と下端の情報を読みやすくする。
+      const bottomShade = ctx.createLinearGradient(0, H * 0.55, 0, H);
+      bottomShade.addColorStop(0, "rgba(3,45,73,0)");
+      bottomShade.addColorStop(1, "rgba(3,45,73,0.45)");
+      ctx.fillStyle = bottomShade;
+      ctx.fillRect(0, 0, W, H);
+
+      // 内側の細い枠。額装したような締まりを出す。
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.30)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(28.5, 28.5, W - 57, H - 57);
+      ctx.restore();
+
       const pad = 72;
-      const maxWidth = W - pad * 2;
+      // 左のアクセントバー（幅7 + 余白27）ぶん、本文の折り返し幅を狭める。
+      const maxWidth = W - pad * 2 - 34;
       const areaTop = 140;
       const areaBottom = H - 120;
       const areaH = areaBottom - areaTop;
@@ -369,31 +445,65 @@ export function PostForm({ initial }: { initial: PostInitial }) {
       }
 
       // タイトル本文（中央寄せ・左揃え）。
+      // 背景が明るい水色なので、影を落とさないと白文字が沈む。
+      const blockH = lines.length * lineHeight;
+      let y = areaTop + (areaH - blockH) / 2 + lineHeight / 2;
+
+      // タイトルの左に立てるアクセントバー。文字の始まりを示す。
+      const barTop = y - lineHeight / 2;
+      const barGrad = ctx.createLinearGradient(0, barTop, 0, barTop + blockH);
+      barGrad.addColorStop(0, "rgba(255,255,255,0.95)");
+      barGrad.addColorStop(1, "rgba(255,255,255,0.45)");
+      ctx.fillStyle = barGrad;
+      ctx.fillRect(pad, barTop, 7, blockH);
+
+      const textLeft = pad + 34;
+      ctx.save();
       ctx.font = `bold ${fontSize}px ${font}`;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      const blockH = lines.length * lineHeight;
-      let y = areaTop + (areaH - blockH) / 2 + lineHeight / 2;
+      ctx.shadowColor = "rgba(2,40,66,0.45)";
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetY = 3;
       for (const line of lines) {
-        ctx.fillText(line, pad, y);
+        ctx.fillText(line, textLeft, y);
         y += lineHeight;
       }
+      ctx.restore();
 
       // 左上: Harbor ワードマーク。
+      ctx.save();
       ctx.font = `600 32px ${font}`;
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.fillStyle = "rgba(255,255,255,0.97)";
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
+      ctx.shadowColor = "rgba(2,40,66,0.35)";
+      ctx.shadowBlur = 10;
       ctx.fillText("⚓ Harbor", pad, 56);
+      ctx.restore();
 
       // 右下: ユーザー名のみ（小さめ）。Harbor は左上に明記済み。
       if (initial.authorName) {
+        ctx.save();
         ctx.font = `500 27px ${font}`;
-        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
         ctx.textAlign = "right";
         ctx.textBaseline = "alphabetic";
-        ctx.fillText(initial.authorName, W - pad, H - 56);
+        ctx.shadowColor = "rgba(2,40,66,0.35)";
+        ctx.shadowBlur = 10;
+        const nameY = H - 56;
+        ctx.fillText(initial.authorName, W - pad, nameY);
+        // 名前の上に短い区切り線を引き、署名らしく見せる。
+        const nameW = ctx.measureText(initial.authorName).width;
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255,255,255,0.45)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(W - pad - Math.min(nameW, 260), nameY - 26);
+        ctx.lineTo(W - pad, nameY - 26);
+        ctx.stroke();
+        ctx.restore();
       }
 
       const blob = await new Promise<Blob | null>((resolve) =>
