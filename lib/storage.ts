@@ -99,6 +99,42 @@ function getS3Client(): S3Client {
   return s3Client;
 }
 
+// カバー画像（OGP 用）の最適化設定。
+// og:image はクローラーが取得するため、容量が大きいと取得に失敗して
+// カードが画像なしで表示されることがある（実例で 2MB の PNG があった）。
+// 表示は 1200x630 あれば十分なので、その範囲へ収めて JPEG へ揃える。
+const COVER_MAX_DIMENSION = 1200;
+const COVER_JPEG_QUALITY = 82;
+
+/**
+ * カバー画像を OGP 向けに最適化する。
+ * PNG のままだと写真やスクリーンショットで数MBに膨らむため JPEG へ変換する。
+ * WebP のほうが小さくなるが、og:image では対応していないクローラーが残るため、
+ * 最も互換性の高い JPEG を選んでいる（カードが出ないほうが損失が大きい）。
+ * アニメーション GIF は動きが失われるため対象外とし、従来どおり保存する。
+ */
+async function processCoverImage(
+  input: Buffer,
+  format: ImageFormat
+): Promise<{ buffer: Buffer; contentType: string; format: ImageFormat }> {
+  if (format === "gif") {
+    const processed = await processImage(input, format);
+    return { ...processed, format };
+  }
+  const buffer = await sharp(input)
+    .resize({
+      width: COVER_MAX_DIMENSION,
+      height: COVER_MAX_DIMENSION,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    // JPEG は透過を扱えない。元が透過 PNG のときに黒くならないよう白で埋める。
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: COVER_JPEG_QUALITY, mozjpeg: true })
+    .toBuffer();
+  return { buffer, contentType: MIME_BY_FORMAT["jpg"], format: "jpg" };
+}
+
 /**
  * 画像ファイルを保存し、公開 URL を返す。
  * @param file ブラウザから受け取った File（multipart/form-data）
@@ -125,12 +161,22 @@ export async function saveImage(
   const input = Buffer.from(await file.arrayBuffer());
 
   // 長辺 maxDimension 以内へリサイズし、形式ごとに再エンコードして圧縮する。
+  // カバー画像だけは OGP 用に JPEG へ揃えて軽くする（processCoverImage 参照）。
+  const isCover = prefix === "covers";
   let bytes: Buffer;
   let contentType: string;
+  let outFormat: ImageFormat = format;
   try {
-    const processed = await processImage(input, format, maxDimension);
-    bytes = processed.buffer;
-    contentType = processed.contentType;
+    if (isCover) {
+      const processed = await processCoverImage(input, format);
+      bytes = processed.buffer;
+      contentType = processed.contentType;
+      outFormat = processed.format;
+    } else {
+      const processed = await processImage(input, format, maxDimension);
+      bytes = processed.buffer;
+      contentType = processed.contentType;
+    }
   } catch {
     throw new ImageValidationError(
       "画像を処理できませんでした（破損または非対応の画像の可能性があります）"
@@ -138,7 +184,8 @@ export async function saveImage(
   }
 
   const safePrefix = prefix.replace(/[^a-z0-9_-]/gi, "");
-  const key = `${safePrefix}/${randomUUID()}.${format}`;
+  // 拡張子は変換後の形式に合わせる（カバーは jpg になる）。
+  const key = `${safePrefix}/${randomUUID()}.${outFormat}`;
 
   if (isS3Configured()) {
     await getS3Client().send(
