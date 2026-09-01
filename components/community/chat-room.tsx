@@ -331,7 +331,9 @@ export function ChatRoom({
 
   return (
     <ScreenDockContext.Provider value={screenDock}>
-    <div className="flex min-h-[65vh] flex-col">
+    {/* group を付けているのは、入力バーから「ドックが空か」を参照するため
+        （group-has-[[data-dock]:empty] で下の入力バーの幅を切り替える）。 */}
+    <div className="group flex min-h-[65vh] flex-col">
       {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。 */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs dark:border-gray-800">
         <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-600 dark:text-green-400">
@@ -519,7 +521,10 @@ export function ChatRoom({
       {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る） */}
       {currentUserId ? (
         <div className="sticky bottom-0 z-30 -mx-4 border-t border-gray-200 bg-white/95 backdrop-blur sm:-mx-6 dark:border-gray-800 dark:bg-gray-950/95">
-          <div className="mx-auto w-full px-4 py-3 sm:px-6">
+          {/* 共有していないとき（ドックが空）は本文と同じ max-w-3xl に揃える。
+              ページを広げているため、そのままだと入力欄だけ間延びする。
+              共有中は本文＋共有画面の幅に合わせて広いままにする。 */}
+          <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:group-has-[[data-dock]:empty]:max-w-3xl">
             {error && (
               <p className="mb-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
                 {error}
