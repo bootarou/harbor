@@ -11,6 +11,7 @@ import { getHomeHighlights } from "@/lib/home";
 import { getTipRateStats } from "@/lib/tip-rate";
 import { getUndiscoveredPosts } from "@/lib/undiscovered";
 import { getCommunityTicker } from "@/lib/community";
+import { getLivekitConfig, listActiveVoiceRoomCounts } from "@/lib/livekit";
 import { CommunityTicker } from "@/components/top/community-ticker";
 
 function buildQuery(opts: { q?: string; tag?: string }): string {
@@ -63,6 +64,7 @@ export default async function Home({
 
   const filtering = q !== "" || tag !== "";
 
+  const livekitCfg = getLivekitConfig();
   const [
     { posts, hasMore },
     total,
@@ -71,6 +73,7 @@ export default async function Home({
     tipRate,
     encounters,
     communityTicker,
+    liveCounts,
   ] = await Promise.all([
       getPostsPage({ page: 1, q, tag }),
       filtering ? prisma.post.count({ where: buildPostWhere({ q, tag }) }) : Promise.resolve(0),
@@ -84,6 +87,12 @@ export default async function Home({
       filtering ? Promise.resolve(null) : getUndiscoveredPosts({ limit: 5 }),
       // コミュニティ・ティッカー（絞り込み中は不要）
       filtering ? Promise.resolve([]) : getCommunityTicker(20),
+      // harborトークが進行中のトピック（ティッカーのバッジ用）。
+      // listRooms() 1回で全トピック分が取れ、/community と15秒キャッシュを共有する。
+      // LiveKit 未設定・到達不能なら空になり、バッジが出ないだけで描画は妨げない。
+      livekitCfg && !filtering
+        ? listActiveVoiceRoomCounts(livekitCfg)
+        : Promise.resolve<Record<string, number>>({}),
     ]);
 
   // 上位タグ
@@ -106,7 +115,9 @@ export default async function Home({
       )}
 
       {/* コミュニティ新着ティッカー（横スクロール・絞り込み中は非表示） */}
-      {!filtering && <CommunityTicker items={communityTicker} />}
+      {!filtering && (
+        <CommunityTicker items={communityTicker} liveCounts={liveCounts} />
+      )}
 
       <h1 className="mb-6 text-2xl font-bold">記事一覧</h1>
 
