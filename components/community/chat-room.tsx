@@ -27,8 +27,9 @@ import { UserAvatar } from "@/components/user-avatar";
 const POLL_MS = 45_000;
 
 // 画面共有ドックの幅（PC）。ドラッグで調整でき、端末ごとに記憶する。
+// 既定は比率にしている。固定 px だと画面が小さいときに本文が潰れてしまうため。
+// ドラッグ後は px で保存され、以降はそちらが使われる。
 const DOCK_WIDTH_KEY = "harbor.community.dockWidth";
-const DOCK_WIDTH_DEFAULT = 640;
 const DOCK_WIDTH_MIN = 320;
 
 // 広げすぎて本文が潰れないよう、画面幅の7割で頭打ちにする。
@@ -353,7 +354,7 @@ export function ChatRoom({
           共有していないときはドックが empty:hidden で消え、本文が中央に残るため
           従来（max-w-3xl 中央寄せ）と同じ見た目になる。 */}
       <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-center">
-      <ul className="flex min-w-0 w-full flex-1 flex-col gap-4 pb-4 lg:max-w-3xl">
+      <ul className="flex w-full min-w-0 flex-1 flex-col gap-4 pb-4 lg:min-w-[22rem] lg:max-w-3xl">
         {messages.length === 0 && (
           <li className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
             まだメッセージがありません。最初の一言をどうぞ。
@@ -475,17 +476,20 @@ export function ChatRoom({
           幅は CSS 変数 --dock-w で、仕切りのドラッグから書き換える。 */}
       <div
         ref={dockWrapRef}
-        className="flex w-full gap-1 has-[[data-dock]:empty]:hidden lg:sticky lg:top-4 lg:w-[var(--dock-w,640px)] lg:shrink-0"
+        className="flex w-full gap-1 has-[[data-dock]:empty]:hidden lg:sticky lg:top-4 lg:w-[var(--dock-w,65%)] lg:shrink-0"
       >
         {/* 幅を調整する仕切り。PC のみ表示する（スマホは上下に積むため不要）。 */}
         <div
           onPointerDown={startDockResize}
-          onDoubleClick={() =>
-            dockWrapRef.current?.style.setProperty(
-              "--dock-w",
-              `${DOCK_WIDTH_DEFAULT}px`
-            )
-          }
+          onDoubleClick={() => {
+            // px 指定を消すと、CSS の既定（比率）に戻る。
+            dockWrapRef.current?.style.removeProperty("--dock-w");
+            try {
+              window.localStorage.removeItem(DOCK_WIDTH_KEY);
+            } catch {
+              /* 消せなくても表示は既定に戻る */
+            }
+          }}
           role="separator"
           aria-orientation="vertical"
           aria-label="画面共有の幅を調整（ダブルクリックで既定に戻す）"
