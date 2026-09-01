@@ -1,12 +1,49 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { TrackReference } from "@livekit/components-react";
 
 // 画面共有の視聴モーダル。
 // 「画面を見る」を押したときだけ開く。閉じても共有者側の配信は止まらない
 // （共有しているか／見ているかは完全に別の状態として扱う）。
+//
+// 【重要】必ず body 直下へポータルで出すこと。
+// 呼び出し元のチャット入力バーには backdrop-blur が掛かっており、
+// backdrop-filter は position:fixed の包含ブロックを作る。そのまま描画すると
+// inset-0 が入力バーの内側基準になり、モーダルが極端に低く潰れる。
 export function ScreenShareModal({
+  trackRef,
+  sharerName,
+  onClose,
+}: {
+  trackRef: TrackReference;
+  sharerName: string;
+  onClose: () => void;
+}) {
+  // Esc で閉じる。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // ポータル先は body。このコンポーネントは voice-space.tsx から ssr:false で
+  // 読み込まれるが、念のため document の有無を見てから描画する。
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <ModalBody trackRef={trackRef} sharerName={sharerName} onClose={onClose} />,
+    document.body
+  );
+}
+
+// 中身は別コンポーネントにする。ポータルが張られてから初めてマウントされるため、
+// トラック接続の effect が実行される時点で <video> が確実に存在する
+// （外側で分岐すると videoRef が null のまま effect が走り、映像が出ない）。
+function ModalBody({
   trackRef,
   sharerName,
   onClose,
@@ -17,7 +54,7 @@ export function ScreenShareModal({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // トラックを <video> に接続する。モーダルを閉じたら必ず切り離す
+  // トラックを <video> に接続する。閉じたら必ず切り離す
   // （detach を忘れると裏で描画が続き、無駄な負荷になる）。
   useEffect(() => {
     const el = videoRef.current;
@@ -29,25 +66,16 @@ export function ScreenShareModal({
     };
   }, [trackRef]);
 
-  // Esc で閉じる。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`${sharerName}さんの画面共有`}
       onClick={onClose}
     >
       <div
-        className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-gray-900 shadow-xl"
+        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-gray-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-700 px-4 py-2">
@@ -63,13 +91,14 @@ export function ScreenShareModal({
             ✕
           </button>
         </div>
-        {/* アスペクト比を保ったまま枠に収める。モバイルでは画面幅に追従する。 */}
+        {/* アスペクト比を保ったまま枠いっぱいに表示する。
+            モバイルでは画面幅に、PCでは高さに追従する。 */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="max-h-[75vh] w-full bg-black object-contain"
+          className="h-[80vh] w-full bg-black object-contain"
         />
       </div>
     </div>
