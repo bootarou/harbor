@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { TrackReference } from "@livekit/components-react";
 
@@ -21,10 +21,13 @@ export function ScreenShareModal({
   sharerName: string;
   onClose: () => void;
 }) {
-  // Esc で閉じる。
+  // Esc で閉じる。ただし全画面表示中は、ブラウザが全画面解除に使うため閉じない
+  // （解除と同時にモーダルまで消えると意図しない挙動になる）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (document.fullscreenElement) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -53,6 +56,42 @@ function ModalBody({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 全画面状態はブラウザ側の操作（Esc・ネイティブUI）でも変わるため、
+  // 自前の state ではなくイベントで同期する。
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement != null);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    const box = boxRef.current;
+    if (box?.requestFullscreen) {
+      void box.requestFullscreen().catch(() => undefined);
+      return;
+    }
+    // iOS Safari は任意要素の全画面に非対応で、video 単体のみ許可される。
+    const video = videoRef.current as HTMLVideoElement & {
+      webkitEnterFullscreen?: () => void;
+    };
+    video?.webkitEnterFullscreen?.();
+  }, []);
+
+  // 全画面 API が使えない環境ではボタンを出さない。
+  // ref は描画中に参照できないため、video 要素ではなくプロトタイプの有無で判定する
+  // （iOS Safari は任意要素の全画面に非対応で、video 単体のみ許可される）。
+  const canFullscreen =
+    typeof document !== "undefined" &&
+    (document.fullscreenEnabled ||
+      (typeof HTMLVideoElement !== "undefined" &&
+        "webkitEnterFullscreen" in HTMLVideoElement.prototype));
 
   // トラックを <video> に接続する。閉じたら必ず切り離す
   // （detach を忘れると裏で描画が続き、無駄な負荷になる）。
@@ -75,21 +114,39 @@ function ModalBody({
       onClick={onClose}
     >
       <div
-        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-gray-900 shadow-xl"
+        ref={boxRef}
+        className={`flex flex-col overflow-hidden bg-gray-900 shadow-xl ${
+          isFullscreen
+            ? "h-screen w-screen rounded-none"
+            : "max-h-full w-full max-w-6xl rounded-lg"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-700 px-4 py-2">
           <p className="truncate text-sm font-medium text-white">
             🖥 {sharerName}さんの画面共有
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="閉じる"
-            className="shrink-0 rounded-md px-2 py-1 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
-          >
-            ✕
-          </button>
+          <span className="flex shrink-0 items-center gap-1">
+            {canFullscreen && (
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "全画面を終了" : "全画面で表示"}
+                aria-label={isFullscreen ? "全画面を終了" : "全画面で表示"}
+                className="rounded-md px-2 py-1 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+              >
+                {isFullscreen ? "⛶ 全画面を終了" : "⛶ 全画面"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="閉じる"
+              className="rounded-md px-2 py-1 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+            >
+              ✕
+            </button>
+          </span>
         </div>
         {/* アスペクト比を保ったまま枠いっぱいに表示する。
             モバイルでは画面幅に、PCでは高さに追従する。 */}
@@ -98,7 +155,9 @@ function ModalBody({
           autoPlay
           playsInline
           muted
-          className="h-[80vh] w-full bg-black object-contain"
+          className={`w-full bg-black object-contain ${
+            isFullscreen ? "min-h-0 flex-1" : "h-[80vh]"
+          }`}
         />
       </div>
     </div>
