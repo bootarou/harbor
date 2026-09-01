@@ -33,6 +33,23 @@ export function SiteFooter() {
           現在のネットワーク: <span className="font-semibold">{network}</span>
           。秘密鍵・リカバリーフレーズはサーバーに保存されません。
         </p>
+        {/* 運営者情報。電気通信事業の届出番号と問い合わせ窓口を全ページで開示する。
+            窓口は X の DM。メールアドレスの平文掲載は収集ボット対策のため避けている。 */}
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>電気通信事業届出番号: E-08-05768</span>
+          <span>
+            管理者・お問い合わせ:{" "}
+            <a
+              href="https://x.com/bootarou_0x00"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              @bootarou_0x00
+            </a>
+            （X の DM）
+          </span>
+        </p>
       </div>
     </footer>
   );
