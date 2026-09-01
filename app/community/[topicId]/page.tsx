@@ -116,7 +116,7 @@ export default async function TopicPage({
   return (
     // 画面共有を本文の横に並べるため、大画面では幅を広げる。
     // 共有していないときは本文が中央に寄るので、見た目は従来と変わらない。
-    <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 lg:max-w-7xl">
+    <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 lg:max-w-7xl 2xl:max-w-[96rem]">
       {/* ヘッダー類は本文と同じ幅に保つ（広げると間延びするため） */}
       <div className="mx-auto w-full max-w-3xl">
       <nav className="mb-4 text-sm">

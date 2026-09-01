@@ -26,6 +26,20 @@ import { UserAvatar } from "@/components/user-avatar";
 
 const POLL_MS = 45_000;
 
+// 画面共有ドックの幅（PC）。ドラッグで調整でき、端末ごとに記憶する。
+const DOCK_WIDTH_KEY = "harbor.community.dockWidth";
+const DOCK_WIDTH_DEFAULT = 640;
+const DOCK_WIDTH_MIN = 320;
+
+// 広げすぎて本文が潰れないよう、画面幅の7割で頭打ちにする。
+function clampDockWidth(px: number): number {
+  const max =
+    typeof window === "undefined"
+      ? 900
+      : Math.max(DOCK_WIDTH_MIN, Math.round(window.innerWidth * 0.7));
+  return Math.min(Math.max(px, DOCK_WIDTH_MIN), max);
+}
+
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat("ja-JP", {
     dateStyle: "short",
@@ -102,6 +116,52 @@ export function ChatRoom({
   // ref ではなくコールバック ref + state にして、要素が用意できた時点で
   // 子（VoicePanel）へ伝わるようにする。
   const [screenDock, setScreenDock] = useState<HTMLDivElement | null>(null);
+  // ドック幅の調整。state ではなく CSS 変数を直接書き換える。
+  // ドラッグ中に再描画するとメッセージ一覧ごと作り直されて重くなるため。
+  const dockWrapRef = useRef<HTMLDivElement>(null);
+
+  // 保存済みの幅を復元する。
+  useEffect(() => {
+    const el = dockWrapRef.current;
+    if (!el) return;
+    try {
+      const saved = Number(window.localStorage.getItem(DOCK_WIDTH_KEY));
+      if (Number.isFinite(saved) && saved > 0) {
+        el.style.setProperty("--dock-w", `${clampDockWidth(saved)}px`);
+      }
+    } catch {
+      /* localStorage が使えない環境では既定幅のまま */
+    }
+  }, []);
+
+  // 仕切りのドラッグ。ドックは右側にあるので、左へ動かすと広がる。
+  function startDockResize(e: React.PointerEvent<HTMLElement>) {
+    const el = dockWrapRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = el.getBoundingClientRect().width;
+    const onMove = (ev: PointerEvent) => {
+      el.style.setProperty(
+        "--dock-w",
+        `${clampDockWidth(startW + (startX - ev.clientX))}px`
+      );
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try {
+        window.localStorage.setItem(
+          DOCK_WIDTH_KEY,
+          String(Math.round(el.getBoundingClientRect().width))
+        );
+      } catch {
+        /* 保存できなくても表示は維持される */
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // 重複を避けつつ新着を末尾に追加する。
@@ -406,12 +466,31 @@ export function ChatRoom({
         <div ref={bottomRef} />
       </ul>
 
-      {/* 画面共有のドック。中身が無いときは empty:hidden で場所を取らない。
-          PC では本文の右に固定幅で並び、スクロールしても見えるよう sticky にする。 */}
+      {/* 画面共有のドック。中身（ポータル先の div）が空のときは
+          has-[div:empty]:hidden で仕切りごと消え、場所を取らない。
+          PC では本文の右に並び、スクロールしても見えるよう sticky にする。
+          幅は CSS 変数 --dock-w で、仕切りのドラッグから書き換える。 */}
       <div
-        ref={setScreenDock}
-        className="w-full empty:hidden lg:sticky lg:top-4 lg:w-[440px] lg:shrink-0 xl:w-[560px]"
-      />
+        ref={dockWrapRef}
+        className="flex w-full gap-1 has-[div:empty]:hidden lg:sticky lg:top-4 lg:w-[var(--dock-w,640px)] lg:shrink-0"
+      >
+        {/* 幅を調整する仕切り。PC のみ表示する（スマホは上下に積むため不要）。 */}
+        <div
+          onPointerDown={startDockResize}
+          onDoubleClick={() =>
+            dockWrapRef.current?.style.setProperty(
+              "--dock-w",
+              `${DOCK_WIDTH_DEFAULT}px`
+            )
+          }
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="画面共有の幅を調整（ダブルクリックで既定に戻す）"
+          title="ドラッグで幅を調整（ダブルクリックで既定に戻す）"
+          className="hidden w-1.5 shrink-0 cursor-col-resize rounded-full bg-gray-200 transition hover:bg-teal-400 lg:block dark:bg-gray-700 dark:hover:bg-teal-600"
+        />
+        <div ref={setScreenDock} className="min-w-0 flex-1" />
+      </div>
       </div>
 
       {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る） */}
