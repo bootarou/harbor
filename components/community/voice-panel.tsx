@@ -11,7 +11,7 @@ import {
 import type { LocalParticipant, Participant } from "livekit-client";
 // canPublishSources はプロトコル定義の enum。livekit-client は再エクスポート
 // していないため、依存に含まれる @livekit/protocol から直接取り込む。
-import { TrackSource } from "@livekit/protocol";
+import { DisconnectReason, TrackSource } from "@livekit/protocol";
 import {
   RoomAudioRenderer,
   RoomContext,
@@ -179,6 +179,35 @@ function waitForScreenSharePermission(
   });
 }
 
+/**
+ * 予期しない切断の理由を、利用者に伝わる文言へ変換する。
+ * 自分で退出した場合など、説明が不要なものは null を返す。
+ *
+ * とくに DUPLICATE_IDENTITY は分かりにくい。Harbor のセッションは Cookie 単位
+ * （＝ブラウザプロファイル単位）なので、同じプロファイルの別タブで
+ * 別アカウントにログインすると、元のタブも同じアカウントになる。すると
+ * 同一 identity での重複接続になり、LiveKit が先の接続を切断する。
+ * 黙って未参加へ戻ると「なぜ切れたのか」が分からないため明示する。
+ */
+function disconnectMessage(reason?: DisconnectReason): string | null {
+  switch (reason) {
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return "別の場所で参加したため、こちらの接続を終了しました";
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return "harborトークから退出させられました";
+    case DisconnectReason.ROOM_DELETED:
+    case DisconnectReason.ROOM_CLOSED:
+      return "harborトークが終了しました";
+    case DisconnectReason.SERVER_SHUTDOWN:
+      return "サーバーが停止したため、harborトークを終了しました";
+    case DisconnectReason.SIGNAL_CLOSE:
+      return "接続が切断されました。もう一度お試しください";
+    default:
+      // CLIENT_INITIATED（自分で退出）などは通知不要。
+      return null;
+  }
+}
+
 // 画面共有の取り込み設定。動画配信ではなく資料・コードを見せる用途なので、
 // フレームレートを抑えて解像度（＝文字の可読性）に帯域を回す。
 const SCREEN_CAPTURE = {
@@ -336,11 +365,14 @@ export function VoiceDock({
       const created = new Room({ adaptiveStream: false, dynacast: false });
       pending = created;
       // サーバー側から切断された（別タブでの参加・権限失効など）場合に状態を戻す。
-      created.once(RoomEvent.Disconnected, () => {
+      created.once(RoomEvent.Disconnected, (reason) => {
         setRoom((cur) => (cur === created ? null : cur));
         // 別タブでの参加や権限失効で切断された場合も、自分が残って見えないようにする。
         const id = created.localParticipant.identity;
         if (id) setLeftIdentity(id);
+        // 自分で退出した以外の切断は、理由を伝えないと不具合と区別できない。
+        const message = disconnectMessage(reason);
+        if (message) setError(message);
       });
       await created.connect(data.wsUrl, data.token);
       setRoom(created);
@@ -425,8 +457,17 @@ export function VoiceDock({
         </ParticipantList>
       )}
       {error && (
-        <span className="shrink-0 text-xs text-red-600 dark:text-red-400">
+        <span className="flex shrink-0 items-center gap-1 text-xs text-red-600 dark:text-red-400">
           {error}
+          {/* 切断理由は自分の操作では消えないため、閉じられるようにする。 */}
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="メッセージを閉じる"
+            className="rounded px-1 text-gray-400 transition hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            ✕
+          </button>
         </span>
       )}
       <button
