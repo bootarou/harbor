@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ConnectionState,
   ParticipantEvent,
+  RemoteTrackPublication,
   Room,
   RoomEvent,
   Track,
@@ -519,7 +520,11 @@ function VoiceRowConnected({
   const full = !canPublish && speakers >= maxSpeakers;
 
   // 画面共有トラック。ルーム内で同時に1つだけという前提なので先頭を見る。
-  const screenTracks = useTracks([Track.Source.ScreenShare]);
+  // onlySubscribed: false が必須。既定の true だと購読中のトラックしか返らず、
+  // 下の遅延購読（見ていない間は購読しない）と噛み合わずに検出できなくなる。
+  const screenTracks = useTracks([Track.Source.ScreenShare], {
+    onlySubscribed: false,
+  });
   const screenTrack = screenTracks[0];
   const sharerIdentity = screenTrack?.participant.identity ?? null;
   const iAmSharing = sharerIdentity === localParticipant.identity;
@@ -531,6 +536,21 @@ function VoiceRowConnected({
   // 共有が終わったら視聴モーダルも閉じる（トラックが消えた後に空枠を残さない）。
   const hasScreenTrack = screenTrack !== undefined;
   if (viewing && !hasScreenTrack) setViewing(false);
+
+  // 画面共有トラックは既定で購読しない（autoSubscribe は音声のため true のまま）。
+  // 購読したままだと、モーダルを開いていない人にも映像が流れ続けて帯域を食う。
+  // 音声1本が約40kbps なのに対し画面共有は1.2Mbps あり、影響が大きい。
+  // 「画面を見る」を開いている間だけ購読し、閉じたら解除する。
+  useEffect(() => {
+    const pub = screenTrack?.publication;
+    // 自分が発行しているトラック（LocalTrackPublication）は購読の対象外。
+    if (!(pub instanceof RemoteTrackPublication)) return;
+    pub.setSubscribed(viewing);
+    return () => {
+      // 別の共有へ切り替わった・退出したときに購読を残さない。
+      pub.setSubscribed(false);
+    };
+  }, [screenTrack, viewing]);
 
   // ブラウザ標準の「共有を停止」で終了された場合も検知して、
   // サーバー側のロックを解放する（要件10）。

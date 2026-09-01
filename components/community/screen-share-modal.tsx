@@ -93,17 +93,20 @@ function ModalBody({
       (typeof HTMLVideoElement !== "undefined" &&
         "webkitEnterFullscreen" in HTMLVideoElement.prototype));
 
+  // 遅延購読のため、モーダルを開いた直後はまだトラックが届いていない。
+  // 届いた時点で attach したいので、track 自体を依存に入れる。
+  const track = trackRef.publication?.track;
+
   // トラックを <video> に接続する。閉じたら必ず切り離す
   // （detach を忘れると裏で描画が続き、無駄な負荷になる）。
   useEffect(() => {
     const el = videoRef.current;
-    const track = trackRef.publication?.track;
     if (!el || !track) return;
     track.attach(el);
     return () => {
       track.detach(el);
     };
-  }, [trackRef]);
+  }, [track]);
 
   return (
     <div
@@ -150,15 +153,26 @@ function ModalBody({
         </div>
         {/* アスペクト比を保ったまま枠いっぱいに表示する。
             モバイルでは画面幅に、PCでは高さに追従する。 */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`w-full bg-black object-contain ${
+        <div
+          className={`relative w-full bg-black ${
             isFullscreen ? "min-h-0 flex-1" : "h-[80vh]"
           }`}
-        />
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-contain"
+          />
+          {/* 購読を開始してから映像が届くまでの間。無言の黒画面だと
+              壊れたように見えるため、読み込み中であることを示す。 */}
+          {!track && (
+            <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
+              画面を読み込んでいます…
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
