@@ -245,6 +245,17 @@ LIVEKIT_DOMAIN_TEST=livekit-test.example.com
 docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
 ```
 
+> ⚠️ **`-p harbor-voice` を必ず付けてください。**
+>
+> 省略するとプロジェクト名がディレクトリ名（`harbor-mainnet` など）から自動で決まり、
+> **アプリと同じプロジェクトに属してしまいます**。するとアプリ側で
+> `docker compose up -d` したときに「orphan containers（孤児コンテナ）」として
+> 警告され、**`--remove-orphans` を付けると LiveKit が削除されて通話が止まります**。
+>
+> 警告文自体が「`--remove-orphans` で掃除できます」と案内してくるため、
+> うっかり従うと事故になります。対処は
+> [プロジェクト名を間違えて起動した](#プロジェクト名を間違えて起動したorphan-containers-警告)を参照。
+
 起動ログで **node IP・TCP ポート・UDP レンジ**が意図どおりか確認します。
 
 ```bash
@@ -856,6 +867,46 @@ LiveKit のトラック状態を見て表示しているため、通常は数秒
 対象が小さくなるぶん文字が読みやすくなります。
 
 視聴側は、モーダルの「⛶ 全画面」で拡大できます。
+
+### プロジェクト名を間違えて起動した（orphan containers 警告）
+
+アプリ側で `docker compose up -d` したときに、こう出る場合。
+
+```
+WARN Found orphan containers ([harbor-livekit-main-1 harbor-livekit-test-1])
+     for this project. ... you can run this command with the --remove-orphans flag
+```
+
+音声スタックを `-p harbor-voice` なしで起動したため、アプリと同じプロジェクトに
+属してしまっている状態です。動作はしますが、**`--remove-orphans` を付けて実行すると
+LiveKit が削除され通話が止まります。**
+
+現在の状態はこれで分かります。
+
+```bash
+docker ps --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}'
+```
+
+`livekit-main` / `livekit-test` のプロジェクト名が `harbor-voice` なら正常です。
+`harbor-mainnet` などアプリと同じ名前になっていれば、作り直してください。
+
+```bash
+# 今のもの（プロジェクト名なしで作った）を削除
+docker compose -f docker-compose.voice.yml --env-file .env.voice down
+
+# 正しいプロジェクト名で作り直す
+docker compose -f docker-compose.voice.yml --env-file .env.voice -p harbor-voice up -d
+```
+
+> 作り直しの間は harborトークが止まります。通話中の利用者がいない時間帯に行ってください。
+>
+> `down` で `harbor-voice` ネットワークが消えることがあります。アプリが接続したままなら
+> 残りますが、消えた場合はアプリも作り直して繋ぎ直してください。
+>
+> ```bash
+> docker network ls | grep harbor-voice
+> docker compose -f docker-compose.yml -f docker-compose.voice-app.yml -p <アプリのプロジェクト名> up -d
+> ```
 
 ### mainnet と testnet が混線する
 
