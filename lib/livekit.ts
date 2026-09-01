@@ -200,6 +200,8 @@ export type VoiceParticipantView = {
   avatarUrl: string | null;
   /** 発言権を持っている（マイクを持てる）か。 */
   isSpeaker: boolean;
+  /** 画面共有中か。未参加の閲覧者にも「共有が行われている」と伝えるために使う。 */
+  isSharing: boolean;
 };
 
 /** トークンに埋めた metadata を安全に読む（壊れていても落とさない）。 */
@@ -233,6 +235,8 @@ export async function listVoiceParticipantViews(
       displayName: meta.displayName ?? (p.name || null),
       avatarUrl: meta.avatarUrl ?? null,
       isSpeaker: p.permission?.canPublish === true,
+      isSharing:
+        p.tracks?.some((t) => t.source === TrackSource.SCREEN_SHARE) ?? false,
     };
   });
 }

@@ -435,6 +435,10 @@ export function VoiceDock({
     ? snapshot.filter((p) => p.userId !== leftIdentity)
     : snapshot;
 
+  // 未参加でも「いま画面共有が行われている」ことは分かるようにする。
+  // 映像を見るには参加（＝トークン取得）が必要なので、ここでは存在だけ示す。
+  const sharer = visible.find((p) => p.isSharing) ?? null;
+
   // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
     <div className="flex items-start gap-2">
@@ -455,6 +459,14 @@ export function VoiceDock({
             />
           ))}
         </ParticipantList>
+      )}
+      {sharer && (
+        <span
+          className="flex shrink-0 items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
+          title={`${sharer.displayName ?? "参加者"}さんが画面を共有しています。参加すると見られます`}
+        >
+          🖥 共有中
+        </span>
       )}
       {error && (
         <span className="flex shrink-0 items-center gap-1 text-xs text-red-600 dark:text-red-400">
