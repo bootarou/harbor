@@ -15,7 +15,9 @@ export type TopicFormState = {
   success?: { id: string };
 };
 
-const NOTIFY_EMAIL = process.env.REPORT_NOTIFY_EMAIL || "bootarouapp@gmail.com";
+// 通報の通知先。未設定なら送信しない（公開リポジトリに実アドレスを直書きしない）。
+// 通報によるメッセージの非表示化と記録は、メール送信の成否に関わらず行われる。
+const NOTIFY_EMAIL = process.env.REPORT_NOTIFY_EMAIL?.trim();
 
 // トピック作成/更新（ログイン必須・作成は 5件/日）。
 export async function saveTopic(
@@ -277,14 +279,20 @@ export async function reportMessage(
     `■ 理由`,
     `  ${reason || "(未記入)"}`,
   ].join("\n");
-  try {
-    await sendEmail({
-      to: NOTIFY_EMAIL,
-      subject: "[Harbor] コミュニティのメッセージが通報されました",
-      text,
-    });
-  } catch (e) {
-    console.error("community report email error", e);
+  if (!NOTIFY_EMAIL) {
+    console.warn(
+      "[report] REPORT_NOTIFY_EMAIL が未設定のため通知メールを送信しません（通報は記録済み）"
+    );
+  } else {
+    try {
+      await sendEmail({
+        to: NOTIFY_EMAIL,
+        subject: "[Harbor] コミュニティのメッセージが通報されました",
+        text,
+      });
+    } catch (e) {
+      console.error("community report email error", e);
+    }
   }
 
   revalidatePath(`/community/${msg.topicId}`);

@@ -5,8 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { getClientIp, rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
-const NOTIFY_EMAIL =
-  process.env.REPORT_NOTIFY_EMAIL || "bootarouapp@gmail.com";
+// 通報の通知先。未設定なら送信しない（公開リポジトリに実アドレスを直書きしない）。
+// 通報自体は DB に記録されるので、メールが飛ばなくても内容は失われない。
+const NOTIFY_EMAIL = process.env.REPORT_NOTIFY_EMAIL?.trim();
 
 // 記事の通報。記録し、運営の通知先メールへ詳細を送る（要ログイン）。
 export async function POST(request: Request) {
@@ -102,15 +103,21 @@ export async function POST(request: Request) {
     .filter((l) => l !== "")
     .join("\n");
 
-  try {
-    await sendEmail({
-      to: NOTIFY_EMAIL,
-      subject: `[Harbor] 記事が通報されました: ${post.title}`,
-      text,
-    });
-  } catch (e) {
-    // メール失敗でも通報記録は成立しているので 200 を返す
-    console.error("report email error", e);
+  if (!NOTIFY_EMAIL) {
+    console.warn(
+      "[report] REPORT_NOTIFY_EMAIL が未設定のため通知メールを送信しません（通報は記録済み）"
+    );
+  } else {
+    try {
+      await sendEmail({
+        to: NOTIFY_EMAIL,
+        subject: `[Harbor] 記事が通報されました: ${post.title}`,
+        text,
+      });
+    } catch (e) {
+      // メール失敗でも通報記録は成立しているので 200 を返す
+      console.error("report email error", e);
+    }
   }
 
   return NextResponse.json({ ok: true });
