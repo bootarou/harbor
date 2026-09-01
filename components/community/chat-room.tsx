@@ -334,8 +334,10 @@ export function ChatRoom({
     {/* group を付けているのは、入力バーから「ドックが空か」を参照するため
         （group-has-[[data-dock]:empty] で下の入力バーの幅を切り替える）。 */}
     <div className="group flex min-h-[65vh] flex-col">
-      {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。 */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs dark:border-gray-800">
+      {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。
+          幅は入力バーと同じ扱い。共有していないときは本文に揃え、
+          共有中は本文＋共有画面の幅に合わせる。 */}
+      <div className="mb-4 flex w-full flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs lg:group-has-[[data-dock]:empty]:mx-auto lg:group-has-[[data-dock]:empty]:max-w-3xl dark:border-gray-800">
         <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-600 dark:text-green-400">
           <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
           オンライン {online.length}人
