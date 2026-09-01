@@ -289,9 +289,11 @@ export function ChatRoom({
       </div>
 
       {/* メッセージ一覧（下が最新）。flex-1 で伸ばし、入力欄を下部へ押し出す。 */}
-      {/* PC は本文と画面共有を横並び、スマホは上下に積む。 */}
-      <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start">
-      <ul className="flex min-w-0 flex-1 flex-col gap-4 pb-4">
+      {/* PC は本文と画面共有を横並び、スマホは上下に積む。
+          共有していないときはドックが empty:hidden で消え、本文が中央に残るため
+          従来（max-w-3xl 中央寄せ）と同じ見た目になる。 */}
+      <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-center">
+      <ul className="flex min-w-0 w-full flex-1 flex-col gap-4 pb-4 lg:max-w-3xl">
         {messages.length === 0 && (
           <li className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
             まだメッセージがありません。最初の一言をどうぞ。
@@ -415,7 +417,7 @@ export function ChatRoom({
       {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る） */}
       {currentUserId ? (
         <div className="sticky bottom-0 z-30 -mx-4 border-t border-gray-200 bg-white/95 backdrop-blur sm:-mx-6 dark:border-gray-800 dark:bg-gray-950/95">
-          <div className="w-full px-4 py-3 sm:px-6">
+          <div className="mx-auto w-full px-4 py-3 sm:px-6">
             {error && (
               <p className="mb-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
                 {error}
