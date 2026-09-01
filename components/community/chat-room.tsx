@@ -467,12 +467,15 @@ export function ChatRoom({
       </ul>
 
       {/* 画面共有のドック。中身（ポータル先の div）が空のときは
-          has-[div:empty]:hidden で仕切りごと消え、場所を取らない。
+          has-[[data-dock]:empty]:hidden で仕切りごと消え、場所を取らない。
+          ※ 判定は data-dock を付けたポータル先だけに限定すること。
+             単に div:empty にすると、常に空の仕切り自身にも一致してしまい、
+             ドックが永久に非表示になる。
           PC では本文の右に並び、スクロールしても見えるよう sticky にする。
           幅は CSS 変数 --dock-w で、仕切りのドラッグから書き換える。 */}
       <div
         ref={dockWrapRef}
-        className="flex w-full gap-1 has-[div:empty]:hidden lg:sticky lg:top-4 lg:w-[var(--dock-w,640px)] lg:shrink-0"
+        className="flex w-full gap-1 has-[[data-dock]:empty]:hidden lg:sticky lg:top-4 lg:w-[var(--dock-w,640px)] lg:shrink-0"
       >
         {/* 幅を調整する仕切り。PC のみ表示する（スマホは上下に積むため不要）。 */}
         <div
@@ -489,7 +492,7 @@ export function ChatRoom({
           title="ドラッグで幅を調整（ダブルクリックで既定に戻す）"
           className="hidden w-1.5 shrink-0 cursor-col-resize rounded-full bg-gray-200 transition hover:bg-teal-400 lg:block dark:bg-gray-700 dark:hover:bg-teal-600"
         />
-        <div ref={setScreenDock} className="min-w-0 flex-1" />
+        <div ref={setScreenDock} data-dock className="min-w-0 flex-1" />
       </div>
       </div>
 
