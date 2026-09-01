@@ -148,12 +148,12 @@ async function logIceDiagnostics(room: Room): Promise<void> {
 
 // 行の右端に置く操作ボタンの基本クラス。
 const ROW_BUTTON =
-  "shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
+  "shrink-0 self-start rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
 
 // 行の左端ラベル（アイコン＋「音声」）。
 function RowLabel({ icon }: { icon: string }) {
   return (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+    <span className="flex shrink-0 items-center gap-1 py-1 text-xs text-gray-500 dark:text-gray-400">
       <span aria-hidden="true">{icon}</span>
       <span className="hidden sm:inline">harborトーク</span>
     </span>
@@ -188,12 +188,50 @@ function Chip({
         alt=""
         className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
 />
-      <span className="max-w-[6rem] truncate">
+      <span className="max-w-[9rem] truncate">
         {displayName ?? "（無名）"}
         {isSelf ? "（あなた）" : ""}
       </span>
       <span aria-hidden="true">{isSpeaker ? "🎙" : "🎧"}</span>
     </li>
+  );
+}
+
+// 参加者リスト。人数が少ないうちは1行、増えたら折りたたむ。
+// 入力バーの上段に置いているため、際限なく縦に伸びるとチャットを圧迫する。
+// 既定は先頭数人＋「+N」で1行に収め、▾ で全員を折り返し表示に展開する。
+const COLLAPSED_LIMIT = 3;
+
+function ParticipantList({ children }: { children: React.ReactNode[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const total = children.length;
+  const overflow = total - COLLAPSED_LIMIT;
+  const canCollapse = overflow > 0;
+  const shown = expanded || !canCollapse ? children : children.slice(0, COLLAPSED_LIMIT);
+
+  return (
+    <div className="flex min-w-0 flex-1 items-start gap-1.5">
+      <ul
+        className={`flex min-w-0 flex-1 items-center gap-1.5 py-0.5 ${
+          expanded
+            ? "max-h-24 flex-wrap overflow-y-auto"
+            : "overflow-x-auto"
+        }`}
+      >
+        {shown}
+      </ul>
+      {canCollapse && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          title={expanded ? "参加者リストを畳む" : `全${total}人を表示`}
+          className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          {expanded ? "畳む ▴" : `+${overflow} ▾`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -305,13 +343,15 @@ export function VoiceDock({
 
   // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-start gap-2">
       <RowLabel icon="🎧" />
-      <ul className="flex flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
-        {snapshot.length === 0 ? (
+      {snapshot.length === 0 ? (
+        <span className="flex-1">
           <EmptyHint />
-        ) : (
-          snapshot.map((p) => (
+        </span>
+      ) : (
+        <ParticipantList>
+          {snapshot.map((p) => (
             <Chip
               key={p.userId}
               displayName={p.displayName}
@@ -319,9 +359,9 @@ export function VoiceDock({
               isSpeaker={p.isSpeaker}
               isSelf={false}
             />
-          ))
-        )}
-      </ul>
+          ))}
+        </ParticipantList>
+      )}
       {error && (
         <span className="shrink-0 text-xs text-red-600 dark:text-red-400">
           {error}
@@ -419,9 +459,9 @@ function VoiceRowConnected({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-start gap-2">
       <RowLabel icon={canPublish ? "🎙" : "🎧"} />
-      <ul className="flex flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+      <ParticipantList>
         {participants.map((p) => (
           <LiveChip
             key={p.identity || p.sid}
@@ -429,7 +469,7 @@ function VoiceRowConnected({
             isSelf={p.identity === localParticipant.identity}
           />
         ))}
-      </ul>
+      </ParticipantList>
 
       {connectionState !== ConnectionState.Connected && (
         <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
