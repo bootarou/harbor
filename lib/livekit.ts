@@ -166,13 +166,19 @@ const SPEAKER_PERMISSION: Partial<ParticipantPermission> = {
   canUpdateMetadata: false,
 };
 
-// 画面共有中のスピーカー。マイクに加えて画面共有のみ許可する（カメラは不可）。
+// 画面共有中のスピーカー。マイクに加えて画面共有（映像＋その音声）を許可する。
+// カメラは一切許可しない。SCREEN_SHARE_AUDIO が無いと、共有者が「タブの音声も
+// 共有」を選んでも LiveKit 側で publish が拒否される。
 // 共有ロックを持つ人にだけこの権限を与えることで、同時1人をサーバー側で強制する。
 const SCREEN_SHARER_PERMISSION: Partial<ParticipantPermission> = {
   canSubscribe: true,
   canPublish: true,
   canPublishData: true,
-  canPublishSources: [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+  canPublishSources: [
+    TrackSource.MICROPHONE,
+    TrackSource.SCREEN_SHARE,
+    TrackSource.SCREEN_SHARE_AUDIO,
+  ],
   hidden: false,
   recorder: false,
   canUpdateMetadata: false,

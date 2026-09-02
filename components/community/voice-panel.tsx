@@ -213,7 +213,10 @@ function disconnectMessage(reason?: DisconnectReason): string | null {
 // フレームレートを抑えて解像度（＝文字の可読性）に帯域を回す。
 const SCREEN_CAPTURE = {
   resolution: { width: 1280, height: 720, frameRate: 10 },
-  audio: false,
+  // 画面の音声も共有する。ただし取得できるかはブラウザ次第で、共有者が選択
+  // ダイアログで「音声も共有」にチェックを入れた場合のみ音声トラックが得られる
+  // （Chrome/Edge のタブ共有・Windows の画面共有が中心。Safari は非対応）。
+  audio: true,
 } as const;
 // publish 側でも上限を揃える。動きが少ない画面なので低ビットレートで足りる。
 const SCREEN_PUBLISH = {
@@ -505,10 +508,17 @@ function VoiceRowConnected({
   // 画面共有トラック。ルーム内で同時に1つだけという前提なので先頭を見る。
   // onlySubscribed: false が必須。既定の true だと購読中のトラックしか返らず、
   // 下の遅延購読（見ていない間は購読しない）と噛み合わずに検出できなくなる。
-  const screenTracks = useTracks([Track.Source.ScreenShare], {
-    onlySubscribed: false,
-  });
-  const screenTrack = screenTracks[0];
+  const screenTracks = useTracks(
+    [Track.Source.ScreenShare, Track.Source.ScreenShareAudio],
+    { onlySubscribed: false }
+  );
+  const screenTrack = screenTracks.find(
+    (t) => t.publication.source === Track.Source.ScreenShare
+  );
+  // 画面の音声。共有者がチェックを入れなければ存在しない。
+  const screenAudioTrack = screenTracks.find(
+    (t) => t.publication.source === Track.Source.ScreenShareAudio
+  );
   const sharerIdentity = screenTrack?.participant.identity ?? null;
   const iAmSharing = sharerIdentity === localParticipant.identity;
   const someoneElseSharing = sharerIdentity !== null && !iAmSharing;
@@ -530,16 +540,24 @@ function VoiceRowConnected({
   // 購読と解除が延々と繰り返され、映像が永久に届かない。
   // publication は participant が保持する同一インスタンスなので安定している。
   const screenPub = screenTrack?.publication;
+  const screenAudioPub = screenAudioTrack?.publication;
   useEffect(() => {
-    // 自分が発行しているトラック（LocalTrackPublication）は購読の対象外。
-    if (!(screenPub instanceof RemoteTrackPublication)) return;
-    // 既に望む状態なら呼ばない（不要な往復とチラつきを避ける）。
-    if (screenPub.isDesired !== viewing) screenPub.setSubscribed(viewing);
+    // 映像と音声をまとめて制御する。音声だけ流れて映像が無い状態を作らない
+    // （「画面を見る」を押していない人に突然音が鳴らないようにするため）。
+    const pubs = [screenPub, screenAudioPub].filter(
+      (p): p is RemoteTrackPublication => p instanceof RemoteTrackPublication
+    );
+    for (const pub of pubs) {
+      // 既に望む状態なら呼ばない（不要な往復とチラつきを避ける）。
+      if (pub.isDesired !== viewing) pub.setSubscribed(viewing);
+    }
     return () => {
       // 別の共有へ切り替わった・退出したときに購読を残さない。
-      if (screenPub.isDesired) screenPub.setSubscribed(false);
+      for (const pub of pubs) {
+        if (pub.isDesired) pub.setSubscribed(false);
+      }
     };
-  }, [screenPub, viewing]);
+  }, [screenPub, screenAudioPub, viewing]);
 
   // ブラウザ標準の「共有を停止」で終了された場合も検知して、
   // サーバー側のロックを解放する（要件10）。
@@ -592,11 +610,22 @@ function VoiceRowConnected({
       try {
         // 権限の反映を待ってから publish する（届く前に出すと弾かれる）。
         await waitForScreenSharePermission(localParticipant);
-        await localParticipant.setScreenShareEnabled(
+        const pub = await localParticipant.setScreenShareEnabled(
           true,
           SCREEN_CAPTURE,
           SCREEN_PUBLISH
         );
+        // 音声はブラウザの選択ダイアログで「音声も共有」を選んだときだけ取得できる。
+        // 選び忘れると無音のまま気づけないため、共有者にだけ知らせる。
+        // （環境によっては選択肢自体が出ない。Safari など非対応の場合も同じ案内になる）
+        const audioPublished = localParticipant.getTrackPublication(
+          Track.Source.ScreenShareAudio
+        );
+        if (pub && !audioPublished) {
+          setError(
+            "画面を共有しました（画面の音声は共有されていません。音も届けたい場合は、共有し直して「音声も共有」を選んでください）"
+          );
+        }
       } catch (e) {
         // ロック取得後に publish が失敗（選択のキャンセル・権限拒否など）したら
         // 必ずロックを解放する。放置すると誰も共有できなくなる（要件18）。
@@ -771,6 +800,7 @@ function VoiceRowConnected({
       {viewing && screenTrack && (
         <ScreenShareModal
           trackRef={screenTrack}
+          audioTrackRef={screenAudioTrack}
           sharerName={sharerName}
           onClose={() => setViewing(false)}
         />

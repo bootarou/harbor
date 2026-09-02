@@ -16,10 +16,13 @@ import { useScreenDock } from "@/components/community/screen-dock";
 // inset-0 が入力バーの内側基準になり、モーダルが極端に低く潰れる。
 export function ScreenShareModal({
   trackRef,
+  audioTrackRef,
   sharerName,
   onClose,
 }: {
   trackRef: TrackReference;
+  /** 画面の音声。共有者が「音声も共有」を選ばなかった場合は無い。 */
+  audioTrackRef?: TrackReference;
   sharerName: string;
   onClose: () => void;
 }) {
@@ -45,6 +48,7 @@ export function ScreenShareModal({
   return createPortal(
     <ModalBody
       trackRef={trackRef}
+      audioTrackRef={audioTrackRef}
       sharerName={sharerName}
       onClose={onClose}
       docked={dock !== null}
@@ -58,17 +62,20 @@ export function ScreenShareModal({
 // （外側で分岐すると videoRef が null のまま effect が走り、映像が出ない）。
 function ModalBody({
   trackRef,
+  audioTrackRef,
   sharerName,
   onClose,
   docked,
 }: {
   trackRef: TrackReference;
+  audioTrackRef?: TrackReference;
   sharerName: string;
   onClose: () => void;
   /** チャット内へ埋め込む表示か（false なら画面全体を覆うオーバーレイ）。 */
   docked: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -125,6 +132,19 @@ function ModalBody({
 
   // 描画時に最新の track を読む（イベントで再描画されるため取りこぼさない）。
   const track = pub?.track;
+
+  // 画面の音声。RoomAudioRenderer は画面共有の音声を扱わないため、
+  // ここで専用の <audio> に接続する（マイク音声とは別系統）。
+  const audioPub = audioTrackRef?.publication;
+  const audioTrack = audioPub?.track;
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el || !audioTrack) return;
+    audioTrack.attach(el);
+    return () => {
+      audioTrack.detach(el);
+    };
+  }, [audioTrack]);
 
   // トラックを <video> に接続する。閉じたら必ず切り離す
   // （detach を忘れると裏で描画が続き、無駄な負荷になる）。
@@ -201,6 +221,8 @@ function ModalBody({
               画面を読み込んでいます…
             </p>
           )}
+          {/* 画面の音声。見えないが再生に必要。 */}
+          <audio ref={audioRef} autoPlay className="hidden" />
         </div>
     </div>
   );
