@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 const PLACEHOLDER = "/avatar-placeholder.svg";
 
@@ -26,16 +26,33 @@ export function UserAvatar({
   const failed = src != null && src === failedSrc;
   const url = !src || failed ? PLACEHOLDER : src;
 
+  const markFailed = useCallback(() => {
+    if (src) setFailedSrc(src);
+  }, [src]);
+
+  // onError だけでは取りこぼす経路がある。
+  // - サーバー描画された画像は、React がハンドラを取り付ける前に読み込みが始まり、
+  //   ハイドレーション前に失敗するとエラーを受け取れない
+  // - 失敗がブラウザにキャッシュされている場合も、同じく早すぎて拾えない
+  // どちらも「壊れた画像アイコンのまま」になるため、要素が付いた時点で
+  // 読み込み結果を直接見て判定する（complete かつ naturalWidth が 0 なら失敗）。
+  const checkOnMount = useCallback(
+    (el: HTMLImageElement | null) => {
+      if (!el || !src) return;
+      if (el.complete && el.naturalWidth === 0) setFailedSrc(src);
+    },
+    [src]
+  );
+
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      ref={checkOnMount}
       src={url}
       alt={alt}
       className={className}
       style={style}
-      onError={() => {
-        if (src) setFailedSrc(src);
-      }}
+      onError={markFailed}
     />
   );
 }
