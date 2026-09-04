@@ -334,41 +334,6 @@ export function ChatRoom({
     {/* group を付けているのは、入力バーから「ドックが空か」を参照するため
         （group-has-[[data-dock]:empty] で下の入力バーの幅を切り替える）。 */}
     <div className="group flex min-h-[65vh] flex-col">
-      {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。
-          幅は入力バーと同じ扱い。共有していないときは本文に揃え、
-          共有中は本文＋共有画面の幅に合わせる。 */}
-      <div className="mb-4 flex w-full flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs lg:group-has-[[data-dock]:empty]:mx-auto lg:group-has-[[data-dock]:empty]:max-w-3xl dark:border-gray-800">
-        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-600 dark:text-green-400">
-          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
-          オンライン {online.length}人
-        </span>
-        {online.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1">
-            {online.slice(0, 10).map((v) => (
-              <span
-                key={v.id}
-                className="flex items-center gap-1 rounded-full bg-gray-100 py-0.5 pl-0.5 pr-2 dark:bg-gray-800"
-              >
-                <UserAvatar
-                  src={v.avatarUrl}
-                  alt=""
-                  className="h-4 w-4 rounded-full object-cover"
-/>
-                <span className="max-w-[9rem] truncate">
-                  {v.displayName ?? "（無名）"}
-                  {v.id === currentUserId ? "（あなた）" : ""}
-                </span>
-              </span>
-            ))}
-            {online.length > 10 && (
-              <span className="text-gray-400">+{online.length - 10}</span>
-            )}
-          </div>
-        ) : (
-          <span className="text-gray-400">いま閲覧している人はいません</span>
-        )}
-      </div>
-
       {/* メッセージ一覧（下が最新）。flex-1 で伸ばし、入力欄を下部へ押し出す。 */}
       {/* PC は本文と画面共有を横並び、スマホは上下に積む。
           共有していないときはドックが empty:hidden で消え、本文が中央に残るため
@@ -520,13 +485,51 @@ export function ChatRoom({
       </div>
       </div>
 
-      {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る） */}
+      {/* 入力欄（フロー内で下部に貼り付く sticky。フッターは常にこの下に来る）。
+          未ログインでもオンライン表示は見せたいので、sticky 自体は分岐の外に置く。 */}
+      <div className="sticky bottom-0 z-30 -mx-4 border-t border-gray-200 bg-white/95 backdrop-blur sm:-mx-6 dark:border-gray-800 dark:bg-gray-950/95">
+        {/* 共有していないとき（ドックが空）は本文と同じ max-w-3xl に揃える。
+            ページを広げているため、そのままだと入力欄だけ間延びする。
+            共有中は本文＋共有画面の幅に合わせて広いままにする。 */}
+        <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:group-has-[[data-dock]:empty]:max-w-3xl">
+      {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。
+          以前は画面上部にあり、スクロールすると見えなくなって「いま誰がいるか」を
+          確認しづらかったため、入力欄と同じ sticky 内へ移した。
+          人数が増えても入力欄を押し上げないよう高さを頭打ちにして縦スクロールする。 */}
+      <div className="mb-2 flex max-h-16 w-full flex-wrap items-center gap-2 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 text-xs dark:border-gray-800">
+        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-600 dark:text-green-400">
+          <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
+          オンライン {online.length}人
+        </span>
+        {online.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {online.slice(0, 10).map((v) => (
+              <span
+                key={v.id}
+                className="flex items-center gap-1 rounded-full bg-gray-100 py-0.5 pl-0.5 pr-2 dark:bg-gray-800"
+              >
+                <UserAvatar
+                  src={v.avatarUrl}
+                  alt=""
+                  className="h-4 w-4 rounded-full object-cover"
+/>
+                <span className="max-w-[9rem] truncate">
+                  {v.displayName ?? "（無名）"}
+                  {v.id === currentUserId ? "（あなた）" : ""}
+                </span>
+              </span>
+            ))}
+            {online.length > 10 && (
+              <span className="text-gray-400">+{online.length - 10}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-400">いま閲覧している人はいません</span>
+        )}
+      </div>
+
       {currentUserId ? (
-        <div className="sticky bottom-0 z-30 -mx-4 border-t border-gray-200 bg-white/95 backdrop-blur sm:-mx-6 dark:border-gray-800 dark:bg-gray-950/95">
-          {/* 共有していないとき（ドックが空）は本文と同じ max-w-3xl に揃える。
-              ページを広げているため、そのままだと入力欄だけ間延びする。
-              共有中は本文＋共有画面の幅に合わせて広いままにする。 */}
-          <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:group-has-[[data-dock]:empty]:max-w-3xl">
+        <>
             {error && (
               <p className="mb-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
                 {error}
@@ -670,17 +673,18 @@ export function ChatRoom({
                 )}
               </div>
             )}
-          </div>
-        </div>
+        </>
       ) : (
-        <div className="sticky bottom-0 z-30 -mx-4 border-t border-gray-200 bg-white/95 py-3 text-center text-sm backdrop-blur sm:-mx-6 dark:border-gray-800 dark:bg-gray-950/95">
+        <p className="py-1 text-center text-sm">
           投稿するには{" "}
           <Link href={`/login?callbackUrl=/community/${topicId}`} className="underline">
             ログイン
           </Link>
           してください。
-        </div>
+        </p>
       )}
+        </div>
+      </div>
     </div>
     </ScreenDockContext.Provider>
   );
