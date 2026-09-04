@@ -332,7 +332,7 @@ function Chip({
         alt=""
         className={`h-4 w-4 rounded-full object-cover ${speaking ? "animate-pulse" : ""}`}
 />
-      <span className="max-w-[11rem] truncate">
+      <span className="max-w-[14rem] truncate">
         {displayName ?? "（無名）"}
         {isSelf ? "（あなた）" : ""}
       </span>
@@ -488,8 +488,9 @@ export function VoiceDock({
 
   // 未参加。サーバー側スナップショットで「いま誰がいるか」を見せる。
   return (
-    // スマホでは横並びだと窮屈なので、参加者リストと操作ボタンを段に分ける。
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+    // 参加者リストと操作ボタンは常に別の行にする。横並びだと、操作ボタンが幅を取って
+    // 参加者リストが極端に狭くなり、名前が見切れて横スクロールになってしまうため。
+    <div className="flex flex-col gap-2">
       <div className="flex min-w-0 flex-1 items-start gap-2">
         <RowLabel icon="🎧" />
         {visible.length === 0 ? (
@@ -511,8 +512,8 @@ export function VoiceDock({
         )}
       </div>
 
-      {/* 操作類。スマホでは次の行へ回す。要素が増えても折り返せるようにする。 */}
-      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+      {/* 操作類。常に参加者リストの下の行。要素が増えても折り返せるようにする。 */}
+      <div className="flex flex-wrap items-center gap-2">
       {sharer && (
         <span
           className="flex shrink-0 items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
@@ -773,8 +774,9 @@ function VoiceRowConnected({
   }
 
   return (
-    // スマホでは横並びだと窮屈なので、参加者リストと操作ボタンを段に分ける。
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+    // 参加者リストと操作ボタンは常に別の行にする。横並びだと、操作ボタンが幅を取って
+    // 参加者リストが極端に狭くなり、名前が見切れて横スクロールになってしまうため。
+    <div className="flex flex-col gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           <RowLabel icon={canPublish ? "🎙" : "🎧"} />
         <ParticipantList>
@@ -788,8 +790,8 @@ function VoiceRowConnected({
         </ParticipantList>
         </div>
 
-        {/* 操作類。スマホでは次の行へ回す。要素が増えても折り返せるようにする。 */}
-        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+        {/* 操作類。常に参加者リストの下の行。要素が増えても折り返せるようにする。 */}
+        <div className="flex flex-wrap items-center gap-2">
       {connectionState !== ConnectionState.Connected && (
         <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
           再接続中…
