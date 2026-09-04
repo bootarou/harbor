@@ -209,19 +209,86 @@ function disconnectMessage(reason?: DisconnectReason): string | null {
   }
 }
 
-// 画面共有の取り込み設定。動画配信ではなく資料・コードを見せる用途なので、
-// フレームレートを抑えて解像度（＝文字の可読性）に帯域を回す。
-const SCREEN_CAPTURE = {
-  resolution: { width: 1280, height: 720, frameRate: 10 },
-  // 画面の音声も共有する。ただし取得できるかはブラウザ次第で、共有者が選択
-  // ダイアログで「音声も共有」にチェックを入れた場合のみ音声トラックが得られる
-  // （Chrome/Edge のタブ共有・Windows の画面共有が中心。Safari は非対応）。
-  audio: true,
-} as const;
-// publish 側でも上限を揃える。動きが少ない画面なので低ビットレートで足りる。
-const SCREEN_PUBLISH = {
-  screenShareEncoding: { maxBitrate: 1_200_000, maxFramerate: 10 },
-} as const;
+// 画面共有の品質モード。
+// fps だけ変えても意味が薄い。帯域が足りないときの振る舞い（degradationPreference）と、
+// エンコーダへの用途の伝え方（contentHint）を合わせて切り替える必要がある。
+// - 資料やコードは解像度優先（文字が潰れると読めない）
+// - ゲームは滑らかさ優先（解像度が落ちても動きが途切れないほうがよい）
+// LiveKit の既定は画面共有＝maintain-resolution なので、ゲームでは明示的に上書きする。
+export type ScreenMode = "low" | "standard" | "game";
+
+type ScreenModePreset = {
+  label: string;
+  hint: string;
+  frameRate: number;
+  maxBitrate: number;
+  degradationPreference: RTCDegradationPreference;
+  contentHint: "text" | "detail" | "motion";
+};
+
+const SCREEN_MODES: Record<ScreenMode, ScreenModePreset> = {
+  low: {
+    label: "低速 10fps",
+    hint: "回線が細いとき向け。資料やコードの文字を優先します",
+    frameRate: 10,
+    maxBitrate: 1_200_000,
+    degradationPreference: "maintain-resolution",
+    contentHint: "text",
+  },
+  standard: {
+    label: "標準 15fps",
+    hint: "通常の画面共有向け。読みやすさと滑らかさのバランス",
+    frameRate: 15,
+    maxBitrate: 2_500_000,
+    degradationPreference: "maintain-resolution",
+    contentHint: "detail",
+  },
+  game: {
+    label: "ゲーム 20fps",
+    hint: "動きの多い映像向け。解像度より滑らかさを優先します",
+    frameRate: 20,
+    maxBitrate: 5_000_000,
+    degradationPreference: "maintain-framerate",
+    contentHint: "motion",
+  },
+};
+
+const SCREEN_MODE_KEY = "harbor.community.screenMode";
+const DEFAULT_SCREEN_MODE: ScreenMode = "standard";
+
+function loadScreenMode(): ScreenMode {
+  try {
+    const saved = window.localStorage.getItem(SCREEN_MODE_KEY);
+    if (saved === "low" || saved === "standard" || saved === "game") return saved;
+  } catch {
+    /* localStorage が使えない環境では既定のまま */
+  }
+  return DEFAULT_SCREEN_MODE;
+}
+
+// 選んだモードから、取り込み設定と publish 設定を組み立てる。
+function screenCaptureOptions(mode: ScreenMode) {
+  const preset = SCREEN_MODES[mode];
+  return {
+    resolution: { width: 1280, height: 720, frameRate: preset.frameRate },
+    contentHint: preset.contentHint,
+    // 画面の音声も共有する。ただし取得できるかはブラウザ次第で、共有者が選択
+    // ダイアログで「音声も共有」にチェックを入れた場合のみ音声トラックが得られる
+    // （Chrome/Edge のタブ共有・Windows の画面共有が中心。Safari は非対応）。
+    audio: true,
+  } as const;
+}
+
+function screenPublishOptions(mode: ScreenMode) {
+  const preset = SCREEN_MODES[mode];
+  return {
+    screenShareEncoding: {
+      maxBitrate: preset.maxBitrate,
+      maxFramerate: preset.frameRate,
+    },
+    degradationPreference: preset.degradationPreference,
+  } as const;
+}
 
 // 行の右端に置く操作ボタンの基本クラス。
 const ROW_BUTTON =
@@ -524,6 +591,8 @@ function VoiceRowConnected({
   const someoneElseSharing = sharerIdentity !== null && !iAmSharing;
   const sharerName = screenTrack ? displayNameOf(screenTrack.participant) : "";
   const [screenPending, setScreenPending] = useState(false);
+  // 画質モード。端末ごとに記憶する（ssr:false で読み込まれるため初期化時に参照して問題ない）。
+  const [screenMode, setScreenMode] = useState<ScreenMode>(loadScreenMode);
   const [viewing, setViewing] = useState(false);
 
   // 共有が終わったら視聴モーダルも閉じる（トラックが消えた後に空枠を残さない）。
@@ -612,8 +681,8 @@ function VoiceRowConnected({
         await waitForScreenSharePermission(localParticipant);
         const pub = await localParticipant.setScreenShareEnabled(
           true,
-          SCREEN_CAPTURE,
-          SCREEN_PUBLISH
+          screenCaptureOptions(screenMode),
+          screenPublishOptions(screenMode)
         );
         // 音声はブラウザの選択ダイアログで「音声も共有」を選んだときだけ取得できる。
         // 選び忘れると無音のまま気づけないため、共有者にだけ知らせる。
@@ -745,6 +814,32 @@ function VoiceRowConnected({
         >
           🖥 画面を見る
         </button>
+      )}
+
+      {/* 画質モード。共有中は変更しても反映できない（変更すると
+          ブラウザの選択ダイアログがもう一度出てしまう）ため、次回の共有に適用する。 */}
+      {canPublish && !someoneElseSharing && !iAmSharing && (
+        <select
+          value={screenMode}
+          onChange={(e) => {
+            const next = e.target.value as ScreenMode;
+            setScreenMode(next);
+            try {
+              window.localStorage.setItem(SCREEN_MODE_KEY, next);
+            } catch {
+              /* 保存できなくても今回の共有には反映される */
+            }
+          }}
+          title={SCREEN_MODES[screenMode].hint}
+          aria-label="画面共有の画質モード"
+          className="shrink-0 self-start rounded-full border border-gray-300 bg-transparent px-2 py-1 text-xs text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+        >
+          {(Object.keys(SCREEN_MODES) as ScreenMode[]).map((m) => (
+            <option key={m} value={m}>
+              {SCREEN_MODES[m].label}
+            </option>
+          ))}
+        </select>
       )}
 
       {/* 発言権を持つ人だけが共有できる。他の人が共有中は出さない。 */}
