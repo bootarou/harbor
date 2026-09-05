@@ -33,7 +33,7 @@ export default async function FeedPage() {
   const posts = followingIds.length
     ? await prisma.post.findMany({
         where: { AND: [livePostWhere(), { authorId: { in: followingIds } }] },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ publishAt: "desc" }, { createdAt: "desc" }],
         take: 30,
         select: {
           id: true,
@@ -42,6 +42,7 @@ export default async function FeedPage() {
           coverImage: true,
           tags: true,
           createdAt: true,
+          publishAt: true,
           viewCount: true,
           paid: true,
           priceAmount: true,

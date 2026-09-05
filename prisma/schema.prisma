@@ -170,7 +170,8 @@ model Post {
   coverImage  String?
   published   Boolean   @default(false)
   tags        String[]  @default([])
-  publishAt   DateTime? // 公開日時。未来なら未公開扱い
+  publishAt   DateTime? // 公開日時。未来なら未公開扱い。下書き→公開の瞬間に記録する
+  editedAt    DateTime? // 本文を編集・保存した日時。updatedAt は閲覧数などでも動くため別に持つ
 
   // 投稿タイプ: "article"（通常記事） / "external_url"（外部URL共有） / "qa"（質問・回答）
   postType       String  @default("article")
@@ -224,6 +225,7 @@ model Post {
 
   @@index([authorId])
   @@index([published, createdAt])
+  @@index([published, publishAt])
   @@index([deletedAt])
   @@index([tags], type: Gin)
   @@index([isArchived])

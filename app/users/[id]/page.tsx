@@ -90,11 +90,12 @@ export default async function UserProfilePage({
         _count: { select: { followers: true, following: true } },
         posts: {
           where: livePostWhere(),
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ publishAt: "desc" }, { createdAt: "desc" }],
           select: {
             id: true,
             title: true,
             createdAt: true,
+            publishAt: true,
             tags: true,
             thanksStatus: true,
           },
@@ -591,7 +592,7 @@ export default async function UserProfilePage({
                     )}
                   </div>
                   <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {formatDate(post.createdAt)}
+                    {formatDate(post.publishAt ?? post.createdAt)}
                   </p>
                 </li>
               );

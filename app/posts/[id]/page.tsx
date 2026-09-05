@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { postPublishedAt } from "@/lib/posts";
 import type { Metadata } from "next";
 import { AuthorCard } from "@/components/author-card";
 import { CommentForm } from "@/components/comment-form";
@@ -100,6 +101,9 @@ export async function generateMetadata({
   };
 }
 
+/** 公開から1日以上あとの編集だけを「更新」として表示する。 */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function formatDate(d: Date): string {
   return new Intl.DateTimeFormat("ja-JP", {
     dateStyle: "medium",
@@ -129,6 +133,7 @@ export default async function PostDetailPage({
       tags: true,
       createdAt: true,
       publishAt: true,
+      editedAt: true,
       postType: true,
       qaStatus: true,
       pollClosesAt: true,
@@ -224,6 +229,13 @@ export default async function PostDetailPage({
   const firstTipId = firstTipperRows[0]?.id ?? null;
 
   const isAuthor = currentUserId === post.authorId;
+  // 公開日は publishAt（下書き→公開の瞬間）。旧記事は createdAt にフォールバック。
+  const publishedAt = postPublishedAt(post);
+  // 公開後に本文を編集したときだけ「更新」を出す（同日中の手直しでは出さない）。
+  const editedAt =
+    post.editedAt && post.editedAt.getTime() - publishedAt.getTime() > DAY_MS
+      ? post.editedAt
+      : null;
 
   // メンション候補＝スレッド参加者（記事著者＋コメント投稿者）。自分自身は除外。
   // id → 表示名 のマップはコメント本文のメンション表示（ハイライト）にも使う。
@@ -438,7 +450,10 @@ export default async function PostDetailPage({
               )}
             </>
           )}
-          {post.author.displayName}・{formatDate(post.createdAt)}
+          {post.author.displayName}・{formatDate(publishedAt)}
+          {editedAt && (
+            <span className="text-gray-400">（更新 {formatDate(editedAt)}）</span>
+          )}
           <span className="text-gray-400">👁 {post.viewCount}</span>
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             💴 {formatXym(tipTotal)} XYM・{tipCount}件

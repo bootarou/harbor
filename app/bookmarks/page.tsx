@@ -26,6 +26,7 @@ export default async function BookmarksPage() {
           coverImage: true,
           tags: true,
           createdAt: true,
+          publishAt: true,
           viewCount: true,
           published: true,
           paid: true,

@@ -6,7 +6,7 @@ import { HomeHighlights } from "@/components/home-highlights";
 import { TipRateIndicator } from "@/components/top/tip-rate-indicator";
 import { TodaysEncounters } from "@/components/top/todays-encounters";
 import { FeedChips } from "@/components/feed-chips";
-import { buildPostWhere, getPostsPage, livePostWhere } from "@/lib/posts";
+import { buildPostWhere, getPostsPage, livePostWhere, postPublishedAt } from "@/lib/posts";
 import { getHomeHighlights } from "@/lib/home";
 import { getTipRateStats } from "@/lib/tip-rate";
 import { getUndiscoveredPosts } from "@/lib/undiscovered";
@@ -55,10 +55,12 @@ export default async function Home({
     if (followingIds.length > 0) {
       const latest = await prisma.post.findFirst({
         where: { AND: [livePostWhere(), { authorId: { in: followingIds } }] },
-        orderBy: { createdAt: "desc" },
-        select: { createdAt: true },
+        orderBy: [{ publishAt: "desc" }, { createdAt: "desc" }],
+        select: { createdAt: true, publishAt: true },
       });
-      latestFollowingPostAt = latest?.createdAt.toISOString() ?? null;
+      latestFollowingPostAt = latest
+        ? postPublishedAt(latest).toISOString()
+        : null;
     }
   }
 

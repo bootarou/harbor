@@ -17,6 +17,32 @@ export type PostFormState = {
   success?: { postId: string; title: string; live: boolean };
 };
 
+/**
+ * 保存後の publishAt を決める。
+ *
+ * createdAt は「下書きを作った日時」なので公開日として使えない
+ * （下書きを寝かせてから公開すると、公開日が下書き作成日になってしまう）。
+ * そこで下書き→公開に切り替わった瞬間を publishAt に記録し、表示側はこちらを使う。
+ *
+ * - フォームで予約日時が指定されていればそれを尊重する
+ * - 既に公開済みなら既存の publishAt を保持する（編集で公開日が動かないように）
+ * - 非公開に戻した場合は publishAt を消し、次に公開したときに再度記録する
+ */
+function resolvePublishAt(args: {
+  wasPublished: boolean;
+  prevPublishAt: Date | null;
+  nextPublished: boolean;
+  nextPublishAt: Date | null;
+}): Date | null {
+  const { wasPublished, prevPublishAt, nextPublished, nextPublishAt } = args;
+  if (nextPublishAt) return nextPublishAt;
+  if (!nextPublished) return null;
+  // 既に公開済みなら公開日は動かさない。
+  // （この修正より前に公開された記事は publishAt が無いので createdAt にフォールバックする）
+  if (wasPublished) return prevPublishAt;
+  return new Date();
+}
+
 // 記事の作成・更新（要ログイン、更新は本人のみ）。
 // contentHTML は必ずサーバー側でサニタイズしてから保存する。
 export async function savePost(
@@ -78,7 +104,12 @@ export async function savePost(
     if (typeof postId === "string" && postId.length > 0) {
       const existing = await prisma.post.findUnique({
         where: { id: postId },
-        select: { authorId: true, deletedAt: true },
+        select: {
+          authorId: true,
+          deletedAt: true,
+          published: true,
+          publishAt: true,
+        },
       });
       if (!existing) return { error: "記事が見つかりません" };
       if (existing.authorId !== userId) {
@@ -89,12 +120,35 @@ export async function savePost(
       // 更新時は qaStatus を上書きしない（ベストアンサー選定済みの "answered" を保持するため）。
       const { qaStatus: _omit, ...updateData } = data;
       void _omit;
-      await prisma.post.update({ where: { id: postId }, data: updateData });
+      await prisma.post.update({
+        where: { id: postId },
+        data: {
+          ...updateData,
+          publishAt: resolvePublishAt({
+            wasPublished: existing.published,
+            prevPublishAt: existing.publishAt,
+            nextPublished: data.published === true,
+            nextPublishAt: publishAtDate,
+          }),
+          // 本文の編集日時。updatedAt は閲覧数カウントなどでも動くため使えない。
+          editedAt: new Date(),
+        },
+      });
       return { id: postId };
     }
     const created = await prisma.post.create({
       // 新規 QA は未回答("open")で作成。それ以外は qaStatus を持たない。
-      data: { ...data, qaStatus: data.postType === "qa" ? "open" : null },
+      data: {
+        ...data,
+        qaStatus: data.postType === "qa" ? "open" : null,
+        publishAt: resolvePublishAt({
+          wasPublished: false,
+          prevPublishAt: null,
+          nextPublished: data.published === true,
+          nextPublishAt: publishAtDate,
+        }),
+        editedAt: new Date(),
+      },
       select: { id: true, title: true, published: true, publishAt: true },
     });
     // 新規作成かつ公開中（予約でない）なら、フォロワーへ新着通知。
@@ -374,6 +428,7 @@ export async function autosaveDraft(
           priceAmount,
           priceCurrency,
           sellerAddress,
+          editedAt: new Date(),
         },
       });
       return { ok: true, postId };
@@ -389,6 +444,7 @@ export async function autosaveDraft(
         tags,
         published: false, // 自動保存は常に下書き
         publishAt: null,
+        editedAt: new Date(),
         qaStatus: isQa ? "open" : null,
         tipsEnabled: true,
         paid,
@@ -454,7 +510,12 @@ export async function togglePublish(formData: FormData): Promise<void> {
 
   const existing = await prisma.post.findUnique({
     where: { id: postId },
-    select: { authorId: true, published: true, deletedAt: true },
+    select: {
+      authorId: true,
+      published: true,
+      deletedAt: true,
+      publishAt: true,
+    },
   });
   if (!existing || existing.authorId !== session.user.id) {
     return;
@@ -464,9 +525,18 @@ export async function togglePublish(formData: FormData): Promise<void> {
     return;
   }
 
+  const nowPublishing = !existing.published;
   await prisma.post.update({
     where: { id: postId },
-    data: { published: !existing.published },
+    data: {
+      published: nowPublishing,
+      // 下書きから公開へ切り替えた瞬間を公開日として記録する。
+      // createdAt は下書きを作った日時なので公開日には使えない。
+      // 予約投稿などで既に入っている場合は上書きしない。
+      ...(nowPublishing && existing.publishAt == null
+        ? { publishAt: new Date() }
+        : {}),
+    },
   });
   revalidatePath("/dashboard");
 }

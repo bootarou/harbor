@@ -25,12 +25,14 @@ export default async function DashboardPage() {
 
   const posts = await prisma.post.findMany({
     where: { authorId: session.user.id, deletedAt: null },
-    orderBy: { updatedAt: "desc" },
+    // 編集した順。editedAt が無い旧記事は updatedAt で補う。
+    orderBy: [{ editedAt: "desc" }, { updatedAt: "desc" }],
     select: {
       id: true,
       title: true,
       published: true,
       publishAt: true,
+      editedAt: true,
       updatedAt: true,
       viewCount: true,
     },
@@ -98,7 +100,8 @@ export default async function DashboardPage() {
                       </span>
                     );
                   })()}
-                  更新: {formatDate(post.updatedAt)}・👁 {post.viewCount}
+                  更新: {formatDate(post.editedAt ?? post.updatedAt)}・👁{" "}
+                  {post.viewCount}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-sm sm:shrink-0">

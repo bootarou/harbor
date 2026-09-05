@@ -121,8 +121,20 @@ export async function getHomeHighlights(): Promise<HomeHighlights> {
       }),
       // 注目記事（過去7日）: いいね＋投げ銭の複合スコア候補。
       prisma.post.findMany({
-        where: { AND: [livePostWhere(), { createdAt: { gte: weekAgo } }] },
-        orderBy: { createdAt: "desc" },
+        // 「過去7日」は公開日で判定する。下書きを寝かせてから公開した記事も拾う。
+        // publishAt が無い旧記事は createdAt で代用する。
+        where: {
+          AND: [
+            livePostWhere(),
+            {
+              OR: [
+                { publishAt: { gte: weekAgo } },
+                { publishAt: null, createdAt: { gte: weekAgo } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ publishAt: "desc" }, { createdAt: "desc" }],
         take: 50,
         select: {
           id: true,

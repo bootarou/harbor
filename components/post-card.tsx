@@ -11,6 +11,7 @@ export type PostCardData = {
   coverImage: string | null;
   tags: string[];
   createdAt: Date | string;
+  publishAt?: Date | string | null;
   viewCount?: number;
   paid?: boolean;
   priceAmount?: number | null;
@@ -137,7 +138,7 @@ export function PostCard({
               <span className="truncate">{post.author.displayName}</span>
             </p>
             <p className="mt-1 text-[11px] text-gray-400">
-              {formatDate(post.createdAt)}・👁 {post.viewCount ?? 0}
+              {formatDate(post.publishAt ?? post.createdAt)}・👁 {post.viewCount ?? 0}
               {thanksCount > 0 && <>・🎁 Thanks × {thanksCount}</>}
               {(post.stampCount ?? 0) > 0 && <>・🎨 × {post.stampCount}</>}
             </p>

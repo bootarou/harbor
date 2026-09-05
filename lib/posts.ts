@@ -28,6 +28,19 @@ export function buildTippers(
 // 「実際に公開中」の条件:
 // published=true かつ（公開日時が未設定 or 現在時刻以前）。
 // 予約投稿（publishAt が未来）は一般の一覧・詳細から除外する。
+/**
+ * 記事の「公開日」。
+ * createdAt は下書きを作った日時なので、そのまま出すと下書きを寝かせた記事の
+ * 公開日が実態とずれる。公開時に publishAt を入れる運用にし、表示はこちらを使う。
+ * publishAt が無い（この修正より前に公開された）記事は createdAt を使う。
+ */
+export function postPublishedAt(post: {
+  publishAt?: Date | null;
+  createdAt: Date;
+}): Date {
+  return post.publishAt ?? post.createdAt;
+}
+
 export function livePostWhere(): Prisma.PostWhereInput {
   return {
     published: true,
@@ -66,6 +79,7 @@ export type FeedPost = {
   coverImage: string | null;
   tags: string[];
   createdAt: Date;
+  publishAt: Date | null;
   viewCount: number;
   paid: boolean;
   priceAmount: number | null;
@@ -100,7 +114,9 @@ export async function getPostsPage(opts: {
 
   const rows = await prisma.post.findMany({
     where,
-    orderBy: { createdAt: "desc" },
+    // 「新着」は公開日順。下書きを寝かせてから公開した記事が
+    // 下書き作成日（createdAt）の位置に埋もれないようにする。
+    orderBy: [{ publishAt: "desc" }, { createdAt: "desc" }],
     skip: (page - 1) * pageSize,
     take: pageSize + 1,
     select: {
@@ -110,6 +126,7 @@ export async function getPostsPage(opts: {
       coverImage: true,
       tags: true,
       createdAt: true,
+      publishAt: true,
       viewCount: true,
       paid: true,
       priceAmount: true,
@@ -156,6 +173,7 @@ export async function getPostsPage(opts: {
     coverImage: r.coverImage,
     tags: r.tags,
     createdAt: r.createdAt,
+    publishAt: r.publishAt,
     viewCount: r.viewCount,
     paid: r.paid,
     priceAmount: r.priceAmount != null ? Number(r.priceAmount) : null,
