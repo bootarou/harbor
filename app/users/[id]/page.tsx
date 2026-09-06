@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { livePostWhere } from "@/lib/posts";
+import { getLivekitConfig, listActiveVoiceRoomCounts } from "@/lib/livekit";
 import { getUserPublishedStamps, getOwnedStampIds } from "@/lib/stamps";
 import { absoluteUrl } from "@/lib/site";
 import { REACTION_TYPES } from "@/lib/thanks";
@@ -100,6 +101,24 @@ export default async function UserProfilePage({
             thanksStatus: true,
           },
         },
+        // このユーザーが立てたコミュニティのトピック。
+        // アーカイブ済みは一覧と同じく除く（/community と並び順もそろえる）。
+        communityTopics: {
+          where: { archived: false },
+          orderBy: [
+            { lastPostedAt: { sort: "desc" as const, nulls: "last" as const } },
+            { createdAt: "desc" as const },
+          ],
+          take: 20,
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            iconUrl: true,
+            lastPostedAt: true,
+            _count: { select: { messages: true } },
+          },
+        },
       },
     }),
   ]);
@@ -107,6 +126,16 @@ export default async function UserProfilePage({
   if (!user) {
     notFound();
   }
+
+  // harborトーク中のトピック（トピックID → 人数）。
+  // トピックが無ければ LiveKit には問い合わせない。
+  // 結果は 15 秒キャッシュ＋失敗時 30 秒バックオフなので、
+  // プロフィールの表示を待たせることはない。
+  const topics = user.communityTopics;
+  const livekitCfg = topics.length > 0 ? getLivekitConfig() : null;
+  const liveCounts = livekitCfg
+    ? await listActiveVoiceRoomCounts(livekitCfg)
+    : {};
 
   const isMe = session?.user?.id === user.id;
   const isFollowing =
@@ -515,6 +544,75 @@ export default async function UserProfilePage({
               />
             ))}
           </div>
+        </section>
+      )}
+
+      {topics.length > 0 && (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">
+              ⚓ このユーザーが立てたコミュニティ（{topics.length}）
+            </h2>
+            <Link
+              href="/community"
+              className="text-xs text-gray-500 underline dark:text-gray-400"
+            >
+              港の広場へ
+            </Link>
+          </div>
+          <ul className="flex flex-col gap-3">
+            {topics.map((t) => {
+              const liveCount = liveCounts[t.id] ?? 0;
+              return (
+                <li key={t.id}>
+                  <Link
+                    href={`/community/${t.id}`}
+                    className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 transition hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                  >
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                      {t.iconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={t.iconUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-lg">
+                          💬
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium">{t.name}</p>
+                        {liveCount > 0 && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                            <span
+                              className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"
+                              aria-hidden="true"
+                            />
+                            🎧 harborトーク {liveCount}人
+                          </span>
+                        )}
+                      </div>
+                      {t.description && (
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                          {t.description}
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-[11px] text-gray-400">
+                        {t._count.messages} 投稿
+                        {t.lastPostedAt
+                          ? `・${formatDate(t.lastPostedAt)}`
+                          : ""}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
