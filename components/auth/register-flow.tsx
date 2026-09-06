@@ -11,6 +11,8 @@ import {
 import { encryptPrivateKey, WebCryptoUnavailableError } from "@/lib/wallet/crypto";
 import { saveStoredWallet } from "@/lib/wallet/storage";
 import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
+import { RecoveryDownload } from "@/components/wallet/recovery-download";
+import { SYMBOL_NETWORK_LABEL } from "@/lib/wallet/network-label";
 import type { SmdCandidate } from "@/lib/smd";
 
 type Mode = "select" | "create" | "import";
@@ -127,6 +129,8 @@ function PassphraseFields({
 function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) {
   const mnemonic = useMemo(() => generateMnemonic(), []);
   const words = useMemo(() => mnemonic.split(" "), [mnemonic]);
+  // ファイルへ書き出すアドレス。導出はクライアント内で完結する。
+  const address = useMemo(() => deriveAccount(mnemonic).address, [mnemonic]);
   const [p1, setP1] = useState("");
   const [p2, setP2] = useState("");
   const [c1, setC1] = useState(false);
@@ -177,6 +181,11 @@ function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) 
           </li>
         ))}
       </ol>
+      <RecoveryDownload
+        mnemonic={mnemonic}
+        address={address}
+        network={SYMBOL_NETWORK_LABEL}
+      />
       <PassphraseFields p1={p1} p2={p2} setP1={setP1} setP2={setP2} />
       <BackupChecks c1={c1} c2={c2} setC1={setC1} setC2={setC2} />
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}

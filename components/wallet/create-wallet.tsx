@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { deriveAccount, generateMnemonic } from "@/lib/wallet/symbol";
 import { encryptPrivateKey, type EncryptedWallet } from "@/lib/wallet/crypto";
+import { RecoveryDownload } from "@/components/wallet/recovery-download";
+import { SYMBOL_NETWORK_LABEL } from "@/lib/wallet/network-label";
 
 type Step = "backup" | "confirm" | "passphrase";
 
@@ -16,6 +18,9 @@ export function CreateWallet({
   // ニーモニックはこのコンポーネントのメモリ上にのみ保持する。
   const [mnemonic] = useState<string>(() => generateMnemonic());
   const words = useMemo(() => mnemonic.split(" "), [mnemonic]);
+  // ファイルへ書き出すアドレス。どのウォレットのフレーズか見分けるために入れる。
+  // 導出はクライアント内で完結し、アドレス以外は外へ出さない。
+  const address = useMemo(() => deriveAccount(mnemonic).address, [mnemonic]);
 
   const [step, setStep] = useState<Step>("backup");
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +107,13 @@ export function CreateWallet({
               </li>
             ))}
           </ol>
+          <div className="mt-4">
+            <RecoveryDownload
+              mnemonic={mnemonic}
+              address={address}
+              network={SYMBOL_NETWORK_LABEL}
+            />
+          </div>
           <div className="mt-4 flex gap-3">
             <button
               type="button"
