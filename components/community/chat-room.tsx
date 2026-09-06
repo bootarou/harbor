@@ -24,6 +24,9 @@ import { VoiceSpace } from "@/components/community/voice-space";
 import { ScreenDockContext } from "@/components/community/screen-dock";
 import { UserAvatar } from "@/components/user-avatar";
 
+// 最下部とみなす余白。数十pxのズレは「最下部を見ている」と扱う。
+const BOTTOM_THRESHOLD_PX = 80;
+
 const POLL_MS = 45_000;
 // harborトークが行われている間は会話が動くため、チャットの取得間隔を短くする。
 const POLL_MS_ACTIVE = 12_000;
@@ -114,7 +117,14 @@ export function ChatRoom({
   // 添付画像（アップロード済みURL）と、その処理状態。
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [imgUploading, setImgUploading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // 自動スクロールの制御。最下部を見ているときだけ新着に追従する。
+  // 履歴を読み返している最中に引き戻すと読んでいる位置を見失うため、
+  // その間は追従せず「新着メッセージ」ボタンで知らせる。
+  const atBottomRef = useRef(true);
+  const prevCountRef = useRef(0);
+  // 自分が送ったときは、どこを見ていても最下部へ移動する。
+  const forceScrollRef = useRef(false);
+  const [unseen, setUnseen] = useState(0);
   // 画面共有の描画先。VoicePanel からポータルで差し込まれる。
   // ref ではなくコールバック ref + state にして、要素が用意できた時点で
   // 子（VoicePanel）へ伝わるようにする。
@@ -243,10 +253,48 @@ export function ChatRoom({
     };
   }, [poll, pollMs]);
 
-  // 新着で最下部へスクロール。
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }, []);
+
+  // いま最下部を見ているかを追う。スクロールのたびに再描画すると
+  // メッセージ一覧ごと作り直されて重いので、state ではなく ref に持つ。
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+    const onScroll = () => {
+      const doc = document.documentElement;
+      const rest = doc.scrollHeight - (window.scrollY + window.innerHeight);
+      const atBottom = rest <= BOTTOM_THRESHOLD_PX;
+      atBottomRef.current = atBottom;
+      // 自力で最下部まで戻ったら新着の知らせは不要。
+      if (atBottom) setUnseen((n) => (n === 0 ? n : 0));
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
+  // 新着メッセージへの追従。
+  useEffect(() => {
+    const prev = prevCountRef.current;
+    const count = messages.length;
+    prevCountRef.current = count;
+    // 通報・削除で減ったときは何もしない。
+    if (count <= prev) return;
+    if (forceScrollRef.current || atBottomRef.current) {
+      forceScrollRef.current = false;
+      // 初回描画は一気に、以降の新着はスムーズに送る。
+      scrollToBottom(prev > 0);
+      return;
+    }
+    setUnseen((n) => n + (count - prev));
+  }, [messages.length, scrollToBottom]);
 
   function send() {
     const text = body.trim();
@@ -256,6 +304,8 @@ export function ChatRoom({
     startSending(async () => {
       const res = await postMessage(topicId, text, undefined, image ?? undefined);
       if (res.ok) {
+        // 自分の発言は、履歴を読み返している最中でも見えるようにする。
+        forceScrollRef.current = true;
         appendMessages([res.message]);
         setBody("");
         setPendingImage(null);
@@ -422,6 +472,11 @@ export function ChatRoom({
                           src={m.imageUrl}
                           alt="添付画像"
                           className="max-h-64 max-w-[250px] rounded-lg border border-gray-200 object-contain dark:border-gray-800"
+                          // 画像が入ると高さが伸びて最下部がずれるため、
+                          // 追従中なら読み込み後にもう一度そろえる。
+                          onLoad={() => {
+                            if (atBottomRef.current) scrollToBottom(false);
+                          }}
                         />
                       </a>
                     )}
@@ -449,7 +504,6 @@ export function ChatRoom({
             </li>
           );
         })}
-        <div ref={bottomRef} />
       </ul>
 
       {/* 画面共有のドック。中身（ポータル先の div）が空のときは
@@ -492,6 +546,21 @@ export function ChatRoom({
             ページを広げているため、そのままだと入力欄だけ間延びする。
             共有中は本文＋共有画面の幅に合わせて広いままにする。 */}
         <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:group-has-[[data-dock]:empty]:max-w-3xl">
+      {/* 履歴を読んでいる間に届いた新着の知らせ。押すと最下部へ移動する。 */}
+      {unseen > 0 && (
+        <div className="mb-2 flex justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setUnseen(0);
+              scrollToBottom(true);
+            }}
+            className="rounded-full bg-teal-600 px-3 py-1 text-xs font-medium text-white shadow transition hover:bg-teal-700"
+          >
+            新着メッセージ {unseen} 件 ↓
+          </button>
+        </div>
+      )}
       {/* オンライン（いま閲覧中）のメンバー。ログイン中の閲覧者を直近90秒で判定。
           以前は画面上部にあり、スクロールすると見えなくなって「いま誰がいるか」を
           確認しづらかったため、入力欄と同じ sticky 内へ移した。
