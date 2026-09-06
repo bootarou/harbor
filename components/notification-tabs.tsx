@@ -39,55 +39,61 @@ export function NotificationTabs({ tabs }: { tabs: NotificationTab[] }) {
 
   return (
     <div>
-      {/* 狭い画面ではタブが溢れるので横スクロールさせる。 */}
-      <div
-        role="tablist"
-        aria-label="通知の種類"
-        className="mb-5 flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800"
-      >
-        {tabs.map((t, i) => {
-          const selected = i === active;
-          return (
-            <button
-              key={t.key}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`${baseId}-tab-${t.key}`}
-              aria-selected={selected}
-              aria-controls={`${baseId}-panel-${t.key}`}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => setActive(i)}
-              onKeyDown={onKeyDown}
-              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition ${
-                selected
-                  ? "border-teal-600 font-semibold text-teal-700 dark:border-teal-500 dark:text-teal-400"
-                  : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-100"
-              }`}
-            >
-              {t.label}
-              {t.count > 0 && (
-                <span
-                  className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums ${
-                    selected
-                      ? "bg-teal-600 text-white"
-                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                  }`}
-                >
-                  {t.count}
-                </span>
-              )}
-              {t.hasBadge && (
-                <span
-                  className="ml-1 inline-block h-2 w-2 rounded-full bg-red-500 align-middle"
-                  aria-label="未読あり"
-                />
-              )}
-            </button>
-          );
-        })}
+      {/* 下線はスクロールコンテナではなく外側に置く。border-b を
+          スクロールコンテナ側に持たせると、ボタンの -mb-px が縦方向に
+          はみ出して縦スクロールバーが出てしまう
+          （overflow-x:auto を指定すると overflow-y も auto に計算されるため）。
+          タブは3つで大半の画面に収まるので、横スクロールバーも隠す。 */}
+      <div className="mb-5 border-b border-gray-200 dark:border-gray-800">
+        <div
+          role="tablist"
+          aria-label="通知の種類"
+          className="-mb-px flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {tabs.map((t, i) => {
+            const selected = i === active;
+            return (
+              <button
+                key={t.key}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`${baseId}-tab-${t.key}`}
+                aria-selected={selected}
+                aria-controls={`${baseId}-panel-${t.key}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActive(i)}
+                onKeyDown={onKeyDown}
+                className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition ${
+                  selected
+                    ? "border-teal-600 font-semibold text-teal-700 dark:border-teal-500 dark:text-teal-400"
+                    : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-100"
+                }`}
+              >
+                {t.label}
+                {t.count > 0 && (
+                  <span
+                    className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums ${
+                      selected
+                        ? "bg-teal-600 text-white"
+                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                )}
+                {t.hasBadge && (
+                  <span
+                    className="ml-1 inline-block h-2 w-2 rounded-full bg-red-500 align-middle"
+                    aria-label="未読あり"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {tabs.map((t, i) => (
