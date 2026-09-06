@@ -55,8 +55,12 @@ export function RecoveryDownload({
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400">
         保存されるファイルは<strong>暗号化されていません</strong>。
-        中身を見た人は誰でも資産を動かせます。共有フォルダやメールに置かず、
-        印刷するか暗号化した場所へ移してください。紙に書き写すのがいちばん安全です。
+        中身を見た人は誰でも資産を動かせます。共有フォルダやメールには置かないでください。
+      </p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        このファイルは書き写すための一時的なものです。
+        <strong>長期保存はせず、紙に書き写したら削除してください</strong>
+        （ゴミ箱からも消してください）。紙で保管するのがいちばん安全です。
       </p>
       {error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
