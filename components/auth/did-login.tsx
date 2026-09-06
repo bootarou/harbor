@@ -74,24 +74,48 @@ export function DidLogin() {
     return <p className="text-sm text-gray-500">読み込み中...</p>;
   }
 
+  // まだこの端末にウォレットが無い状態。
+  // 「見つかりません」とだけ出しても次に何をすればよいか分からないので、
+  // 前提（アドレスが要る）と、初めての人／既に持っている人の分岐を示す。
   if (wallets.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="rounded-md bg-gray-50 px-3 py-3 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
-          この端末にウォレットが見つかりません。
-        </p>
+        <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">
+          <p className="font-medium">この端末にはウォレットがありません</p>
+          <p className="mt-1 text-gray-600 dark:text-gray-400">
+            Harbor はウォレットを<strong>この端末のブラウザ内だけ</strong>に保存します。
+            別の端末やブラウザで作成したアドレスは、ここには出てきません。
+          </p>
+        </div>
+
         <Link
           href="/register?mode=create"
-          className="rounded-md bg-black px-4 py-2.5 text-center text-sm font-medium text-white dark:bg-white dark:text-black"
+          className="rounded-lg bg-black px-4 py-3 text-white transition hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
         >
-          新しいSymbolアドレスを作成する
+          <span className="block text-sm font-semibold">
+            はじめての方 — 新しいSymbolアドレスを作成
+          </span>
+          <span className="mt-0.5 block text-xs opacity-80">
+            メールアドレスは不要です。この端末で鍵を作り、ブラウザ内に保存します。
+          </span>
         </Link>
+
         <Link
           href="/register?mode=import"
-          className="rounded-md border border-gray-300 px-4 py-2.5 text-center text-sm font-medium dark:border-gray-700"
+          className="rounded-lg border border-gray-300 px-4 py-3 transition hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
         >
-          リカバリーフレーズ／秘密鍵で復元する
+          <span className="block text-sm font-semibold">
+            すでにお持ちの方 — リカバリーフレーズ／秘密鍵で復元
+          </span>
+          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+            他の端末やほかのウォレットアプリで作ったSymbolアドレスを、この端末に取り込みます。
+          </span>
         </Link>
+
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          別の端末のHarborにログイン済みなら、下の「QRコードでログイン」が手軽です。
+          リカバリーフレーズを入力せずに、この端末へ持ってこられます。
+        </p>
       </div>
     );
   }
