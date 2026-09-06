@@ -7,6 +7,7 @@ import { formatXym } from "@/lib/format";
 import { ThanksButtons } from "@/components/thanks-buttons";
 import { notificationText, notificationUrl } from "@/lib/notifications";
 import { NotificationSettings } from "@/components/notification-settings";
+import { NotificationTabs } from "@/components/notification-tabs";
 import { explorerTxUrl } from "@/lib/explorer";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -73,6 +74,9 @@ export default async function NotificationsPage() {
     }),
   ]);
 
+  // 既読化する前に未読数を控える（タブの●表示に使う）。
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
   // このページを開いた時点で全通知を既読化（ヘッダーの未読バッジをクリア）。
   await prisma.notification.updateMany({
     where: { userId: me, read: false },
@@ -92,138 +96,157 @@ export default async function NotificationsPage() {
         </div>
       </details>
 
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-semibold">最近の通知</h2>
-        {notifications.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            通知はまだありません。
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
-            {notifications.map((n) => {
-              const { title, body } = notificationText(n);
-              const url = notificationUrl(n);
-              return (
-                <li key={n.id} className="py-3">
-                  <Link href={url} className="block hover:underline">
-                    <p className="text-sm font-medium">
-                      {!n.read && (
-                        <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" />
-                      )}
-                      {title}
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-                      {body}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-gray-400">
-                      {formatDate(n.createdAt)}
-                    </p>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-semibold">
-          あなたの記事へのリアクション
-        </h2>
-        {reactions.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            まだリアクションはありません。
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
-            {reactions.map((r) => {
-              const meta = reactionMeta(r.type);
-              return (
-                <li key={r.id} className="flex flex-col gap-2 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2 text-sm">
-                      <UserAvatar
-                        src={r.user.avatarUrl}
-                        alt=""
-                        className="h-6 w-6 rounded-full object-cover"
-/>
-                      <span className="min-w-0">
-                        <Link
-                          href={`/users/${r.user.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {r.user.displayName}
-                        </Link>{" "}
-                        さんが {meta?.emoji}「{meta?.label}」とリアクション
-                        <br />
-                        <Link
-                          href={`/posts/${r.post.id}`}
-                          className="text-xs text-gray-500 hover:underline dark:text-gray-400"
-                        >
-                          記事: {r.post.title}
+      <NotificationTabs
+        tabs={[
+          {
+            key: "notifications",
+            label: "最近の通知",
+            count: notifications.length,
+            hasBadge: unreadCount > 0,
+            content: (
+              <>
+              {notifications.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  通知はまだありません。
+                </p>
+              ) : (
+                <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
+                  {notifications.map((n) => {
+                    const { title, body } = notificationText(n);
+                    const url = notificationUrl(n);
+                    return (
+                      <li key={n.id} className="py-3">
+                        <Link href={url} className="block hover:underline">
+                          <p className="text-sm font-medium">
+                            {!n.read && (
+                              <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" />
+                            )}
+                            {title}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+                            {body}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-gray-400">
+                            {formatDate(n.createdAt)}
+                          </p>
                         </Link>
-                        <span className="ml-2 text-xs text-gray-400">
-                          {formatDate(r.createdAt)}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="pl-8">
-                    <ThanksButtons
-                      reactionId={r.id}
-                      receiverName={r.user.displayName}
-                      receiverAddress={r.user.xymAddress}
-                      sentType={r.thanks?.thanksType ?? null}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">受け取った Thanks</h2>
-        {received.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            まだありません。
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
-            {received.map((t) => (
-              <li key={t.id} className="py-3 text-sm">
-                <p>
-                  <span className="font-medium">
-                    {t.sender?.displayName ?? "匿名"}
-                  </span>{" "}
-                  さんから{" "}
-                  <span className="font-semibold text-amber-600">
-                    {t.thanksType === "super_thanks" ? "Super Thanks" : "Thanks!"}
-                  </span>{" "}
-                  が届きました 🎉
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              </>
+            ),
+          },
+          {
+            key: "reactions",
+            label: "リアクション",
+            count: reactions.length,
+            content: (
+              <>
+              {reactions.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  まだリアクションはありません。
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                  記事:{" "}
-                  <Link href={`/posts/${t.post.id}`} className="hover:underline">
-                    {t.post.title}
-                  </Link>
-                  ・{formatXym(Number(t.amount))} {t.currency}・
-                  {formatDate(t.createdAt)}・
-                  <a
-                    href={explorerTxUrl(t.txHash)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    tx
-                  </a>
+              ) : (
+                <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
+                  {reactions.map((r) => {
+                    const meta = reactionMeta(r.type);
+                    return (
+                      <li key={r.id} className="flex flex-col gap-2 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2 text-sm">
+                            <UserAvatar
+                              src={r.user.avatarUrl}
+                              alt=""
+                              className="h-6 w-6 rounded-full object-cover"
+                            />
+                            <span className="min-w-0">
+                              <Link
+                                href={`/users/${r.user.id}`}
+                                className="font-medium hover:underline"
+                              >
+                                {r.user.displayName}
+                              </Link>{" "}
+                              さんが {meta?.emoji}「{meta?.label}」とリアクション
+                              <br />
+                              <Link
+                                href={`/posts/${r.post.id}`}
+                                className="text-xs text-gray-500 hover:underline dark:text-gray-400"
+                              >
+                                記事: {r.post.title}
+                              </Link>
+                              <span className="ml-2 text-xs text-gray-400">
+                                {formatDate(r.createdAt)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="pl-8">
+                          <ThanksButtons
+                            reactionId={r.id}
+                            receiverName={r.user.displayName}
+                            receiverAddress={r.user.xymAddress}
+                            sentType={r.thanks?.thanksType ?? null}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              </>
+            ),
+          },
+          {
+            key: "thanks",
+            label: "受け取った Thanks",
+            count: received.length,
+            content: (
+              <>
+              {received.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  まだありません。
                 </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              ) : (
+                <ul className="flex flex-col divide-y divide-gray-200 dark:divide-gray-800">
+                  {received.map((t) => (
+                    <li key={t.id} className="py-3 text-sm">
+                      <p>
+                        <span className="font-medium">
+                          {t.sender?.displayName ?? "匿名"}
+                        </span>{" "}
+                        さんから{" "}
+                        <span className="font-semibold text-amber-600">
+                          {t.thanksType === "super_thanks" ? "Super Thanks" : "Thanks!"}
+                        </span>{" "}
+                        が届きました 🎉
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        記事:{" "}
+                        <Link href={`/posts/${t.post.id}`} className="hover:underline">
+                          {t.post.title}
+                        </Link>
+                        ・{formatXym(Number(t.amount))} {t.currency}・
+                        {formatDate(t.createdAt)}・
+                        <a
+                          href={explorerTxUrl(t.txHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          tx
+                        </a>
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              </>
+            ),
+          },
+        ]}
+      />
     </main>
   );
 }
