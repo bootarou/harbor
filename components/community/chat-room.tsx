@@ -122,6 +122,8 @@ export function ChatRoom({
   // その間は追従せず「新着メッセージ」ボタンで知らせる。
   const atBottomRef = useRef(true);
   const prevCountRef = useRef(0);
+  // 入室後、最初に最下部へ送ったか。
+  const initialisedRef = useRef(false);
   // 自分が送ったときは、どこを見ていても最下部へ移動する。
   const forceScrollRef = useRef(false);
   const [unseen, setUnseen] = useState(0);
@@ -285,12 +287,24 @@ export function ChatRoom({
     const prev = prevCountRef.current;
     const count = messages.length;
     prevCountRef.current = count;
+    if (count === 0) return;
+
+    // 入室直後は、いまの表示位置に関係なく最新（最下部）を表示する。
+    // 位置追跡の effect が先に走ってページ先頭＝「最下部ではない」と判定するため、
+    // ここで明示しないと初回が「新着N件」扱いになってしまう。
+    if (!initialisedRef.current) {
+      initialisedRef.current = true;
+      atBottomRef.current = true;
+      setUnseen(0);
+      scrollToBottom(false);
+      return;
+    }
+
     // 通報・削除で減ったときは何もしない。
     if (count <= prev) return;
     if (forceScrollRef.current || atBottomRef.current) {
       forceScrollRef.current = false;
-      // 初回描画は一気に、以降の新着はスムーズに送る。
-      scrollToBottom(prev > 0);
+      scrollToBottom(true);
       return;
     }
     setUnseen((n) => n + (count - prev));
