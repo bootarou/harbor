@@ -21,6 +21,7 @@ import type { VoiceParticipantView } from "@/lib/livekit";
 import { CommunityTipButton } from "@/components/community/community-tip-button";
 import { TipTotal } from "@/components/community/tip-total";
 import { VoiceSpace } from "@/components/community/voice-space";
+import { VoiceGuestNotice } from "@/components/community/voice-guest-notice";
 import { ScreenDockContext } from "@/components/community/screen-dock";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -758,13 +759,23 @@ export function ChatRoom({
             )}
         </>
       ) : (
-        <p className="py-1 text-center text-sm">
-          投稿するには{" "}
-          <Link href={`/login?callbackUrl=/community/${topicId}`} className="underline">
-            ログイン
-          </Link>
-          してください。
-        </p>
+        /* 未ログイン。参加はできないが、harborトークや画面共有が動いていることは
+           見せる。状況が見えないとアカウントを作る動機が生まれないため。
+           LiveKit のクライアントは読み込まない（参加できない相手に配らない）。 */
+        voiceEnabled ? (
+          <VoiceGuestNotice topicId={topicId} participants={voice} />
+        ) : (
+          <p className="py-1 text-center text-sm">
+            投稿するには{" "}
+            <Link
+              href={`/login?callbackUrl=/community/${topicId}`}
+              className="underline"
+            >
+              ログイン
+            </Link>
+            してください。
+          </p>
+        )
       )}
         </div>
       </div>

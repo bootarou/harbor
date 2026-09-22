@@ -17,11 +17,13 @@ import {
 } from "@/lib/wallet/storage";
 import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import { shortAddress } from "@/lib/did";
+import { safeCallbackUrl } from "@/lib/safe-callback";
 
 export function DidLogin() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  // 外部サイトへ飛ばされないよう、相対パスだけを通す。
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const [wallets, setWallets] = useState<EncryptedWallet[]>([]);
   const [selected, setSelected] = useState<string>("");

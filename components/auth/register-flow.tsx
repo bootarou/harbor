@@ -13,6 +13,7 @@ import { saveStoredWallet } from "@/lib/wallet/storage";
 import { didLoginWithPrivateKey } from "@/lib/wallet/did-client";
 import { RecoveryDownload } from "@/components/wallet/recovery-download";
 import { SYMBOL_NETWORK_LABEL } from "@/lib/wallet/network-label";
+import { safeCallbackUrl } from "@/lib/safe-callback";
 import type { SmdCandidate } from "@/lib/smd";
 
 type Mode = "select" | "create" | "import";
@@ -52,12 +53,29 @@ export function RegisterFlow() {
   const router = useRouter();
   const params = useSearchParams();
   const initialMode = params.get("mode");
+  // 登録後の戻り先。コミュニティなどから誘導されたとき、元の場所へ返す。
+  // 外部サイトへ飛ばされないよう相対パスだけを通す。
+  const callbackUrl = safeCallbackUrl(params.get("callbackUrl"));
   const [mode, setMode] = useState<Mode>(
     initialMode === "create" || initialMode === "import" ? initialMode : "select"
   );
 
-  if (mode === "create") return <CreateFlow onBack={() => setMode("select")} router={router} />;
-  if (mode === "import") return <ImportFlow onBack={() => setMode("select")} router={router} />;
+  if (mode === "create")
+    return (
+      <CreateFlow
+        onBack={() => setMode("select")}
+        router={router}
+        callbackUrl={callbackUrl}
+      />
+    );
+  if (mode === "import")
+    return (
+      <ImportFlow
+        onBack={() => setMode("select")}
+        router={router}
+        callbackUrl={callbackUrl}
+      />
+    );
 
   return (
     <div className="flex flex-col gap-3">
@@ -126,7 +144,15 @@ function PassphraseFields({
   );
 }
 
-function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) {
+function CreateFlow({
+  onBack,
+  router,
+  callbackUrl,
+}: {
+  onBack: () => void;
+  router: Router;
+  callbackUrl: string;
+}) {
   const mnemonic = useMemo(() => generateMnemonic(), []);
   const words = useMemo(() => mnemonic.split(" "), [mnemonic]);
   // ファイルへ書き出すアドレス。導出はクライアント内で完結する。
@@ -154,7 +180,7 @@ function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) 
         setBusy(false);
         return;
       }
-      router.push("/");
+      router.push(callbackUrl);
       router.refresh();
     } catch (e) {
       console.error(e);
@@ -196,7 +222,15 @@ function CreateFlow({ onBack, router }: { onBack: () => void; router: Router }) 
   );
 }
 
-function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) {
+function ImportFlow({
+  onBack,
+  router,
+  callbackUrl,
+}: {
+  onBack: () => void;
+  router: Router;
+  callbackUrl: string;
+}) {
   // 既定はリカバリーフレーズ（作成時にバックアップを案内している情報）。
   const [via, setVia] = useState<"phrase" | "privateKey">("phrase");
   const [phrase, setPhrase] = useState("");
@@ -317,7 +351,7 @@ function ImportFlow({ onBack, router }: { onBack: () => void; router: Router }) 
           body: JSON.stringify({ applyName, applyImageUrl, applyUrl, applyNamespace }),
         }).catch(() => {});
       }
-      router.push("/");
+      router.push(callbackUrl);
       router.refresh();
     } catch (e) {
       console.error(e);
