@@ -17,16 +17,26 @@ function formatDate(d: Date): string {
   }).format(d);
 }
 
+/**
+ * 記事を最後に保存した日時。
+ * editedAt はこの仕組みを入れる前の記事には無いので updatedAt で補う。
+ * 行に表示している「更新: 」と同じ値を使い、表示と並び順を一致させる。
+ */
+function savedAt(p: { editedAt: Date | null; updatedAt: Date }): number {
+  return (p.editedAt ?? p.updatedAt).getTime();
+}
+
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const posts = await prisma.post.findMany({
+  const rows = await prisma.post.findMany({
     where: { authorId: session.user.id, deletedAt: null },
-    // 編集した順。editedAt が無い旧記事は updatedAt で補う。
-    orderBy: [{ editedAt: "desc" }, { updatedAt: "desc" }],
+    // 並べ替えは取得後に行う（下の savedAt を参照）。
+    // ここでは結果を安定させるための基準だけ与える。
+    orderBy: { updatedAt: "desc" },
     select: {
       id: true,
       title: true,
@@ -37,6 +47,15 @@ export default async function DashboardPage() {
       viewCount: true,
     },
   });
+
+  // 「最後に保存した順」に並べる。
+  // orderBy に editedAt を第一キーとして渡すことはできない。既存記事は
+  // editedAt が NULL で、Postgres の DESC は NULLS FIRST のため、
+  // 保存して editedAt が入った記事ほど下へ沈んでしまう。
+  // Prisma の orderBy では COALESCE を書けず、生SQLも使わない方針のため、
+  // 自分の記事だけの一覧（件数が限られる）としてここで並べ替える。
+  const posts = [...rows].sort((a, b) => savedAt(b) - savedAt(a));
+
   // eslint-disable-next-line react-hooks/purity -- サーバーコンポーネントでのリクエスト時刻
   const now = Date.now();
 
