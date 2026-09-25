@@ -461,6 +461,10 @@ model CommunityTopic {
   description  String?
   iconUrl      String?
   archived     Boolean   @default(false)
+  // harborトーク開始時に、直近の発言者へ通知するか（作成者が設定）
+  notifyVoiceStart Boolean   @default(false)
+  // 直近の開始通知を送った日時。連投で通知が溢れないよう間隔を空ける判定に使う
+  voiceNotifiedAt  DateTime?
   lastPostedAt DateTime? // 最終投稿日時（自動アーカイブ判定・一覧の並び順に使用）
   createdAt    DateTime  @default(now())
 

@@ -19,7 +19,15 @@ export default async function NewTopicPage() {
           コミュニティへ
         </Link>
       </div>
-      <TopicForm initial={{ name: "", description: "", iconUrl: "" }} />
+      <TopicForm
+        initial={{
+          name: "",
+          description: "",
+          iconUrl: "",
+          // 既定はオフ。通知は受け手の許可を前提にする。
+          notifyVoiceStart: false,
+        }}
+      />
     </main>
   );
 }

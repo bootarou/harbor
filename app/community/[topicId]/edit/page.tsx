@@ -20,7 +20,14 @@ export default async function EditTopicPage({
 
   const topic = await prisma.communityTopic.findUnique({
     where: { id: topicId },
-    select: { id: true, authorId: true, name: true, description: true, iconUrl: true },
+    select: {
+      id: true,
+      authorId: true,
+      name: true,
+      description: true,
+      iconUrl: true,
+      notifyVoiceStart: true,
+    },
   });
   if (!topic) notFound();
   if (topic.authorId !== session.user.id) redirect(`/community/${topicId}`);
@@ -39,6 +46,7 @@ export default async function EditTopicPage({
           name: topic.name,
           description: topic.description ?? "",
           iconUrl: topic.iconUrl ?? "",
+          notifyVoiceStart: topic.notifyVoiceStart,
         }}
       />
     </main>

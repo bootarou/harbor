@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
+import { notifyVoiceStarted } from "@/lib/notifications";
 import {
   MAX_SPEAKERS,
   createVoiceToken,
@@ -61,6 +62,17 @@ export async function GET(
   // 参加前に満員かどうかを表示できるよう、現在のスピーカー数も返す。
   const participants = await listVoiceParticipants(cfg, topicId);
   const speakers = participants.filter((p) => p.permission?.canPublish).length;
+
+  // 誰もいない部屋への参加＝harborトークの開始とみなし、最近の発言者へ通知する。
+  // 部屋の設定が OFF・クールダウン中なら中で何もしない。
+  // await しない。通知の配信でトークン発行を待たせないため。
+  if (participants.length === 0) {
+    void notifyVoiceStarted({
+      topicId,
+      starterId: userId,
+      starterName: me?.displayName ?? "誰か",
+    });
+  }
 
   return NextResponse.json({
     token,

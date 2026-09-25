@@ -41,6 +41,8 @@ export async function saveTopic(
     name,
     description: description ? description : null,
     iconUrl: iconUrl ? iconUrl : null,
+    // 未チェックのチェックボックスは送信されないため、値の有無で判定する。
+    notifyVoiceStart: formData.get("notifyVoiceStart") === "true",
   };
 
   const topicId = formData.get("topicId");

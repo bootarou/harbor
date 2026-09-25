@@ -10,6 +10,7 @@ type TopicInitial = {
   name: string;
   description: string;
   iconUrl: string;
+  notifyVoiceStart: boolean;
 };
 
 const initialState: TopicFormState = {};
@@ -114,6 +115,24 @@ export function TopicForm({ initial }: { initial: TopicInitial }) {
           className="hidden"
         />
       </div>
+
+      <label className="flex gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="notifyVoiceStart"
+          value="true"
+          defaultChecked={initial.notifyVoiceStart}
+          className="mt-0.5 h-4 w-4 shrink-0"
+        />
+        <span>
+          harborトークが始まったら通知する
+          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+            このトピックで直近30日以内に発言した人へ、開始をお知らせします
+            （開始した本人は除く）。通知を受け取る側も、自分の通知設定で
+            個別にオフにできます。
+          </span>
+        </span>
+      </label>
 
       <div className="flex items-center gap-4">
         <button

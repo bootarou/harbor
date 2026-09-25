@@ -17,7 +17,8 @@ export type NotificationType =
   | "status_up"
   | "stamp_sold"
   | "stamp_placed"
-  | "community_tip";
+  | "community_tip"
+  | "voice_started";
 
 // 種別の定義（ラベルと既定 ON/OFF）。設定画面・正規化に使う。
 export const NOTIFICATION_TYPES: {
@@ -37,6 +38,7 @@ export const NOTIFICATION_TYPES: {
   { key: "stamp_sold", label: "スタンプが売れた", default: true },
   { key: "stamp_placed", label: "自分の記事にスタンプが貼られた", default: true },
   { key: "community_tip", label: "チャットで投げ銭を受け取った", default: true },
+  { key: "voice_started", label: "参加中の部屋でharborトークが始まった", default: true },
 ];
 
 export type NotificationPrefs = Record<NotificationType, boolean>;
@@ -241,6 +243,120 @@ export async function notifyFollowersNewPost(args: {
   }
 }
 
+/** 開始通知を送る対象とする「最近の発言者」の期間。 */
+const VOICE_ACTIVE_DAYS = 30;
+/** 同じ部屋で開始通知を繰り返さない間隔。入退室の繰り返しで通知が溢れるのを防ぐ。 */
+const VOICE_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000;
+
+/**
+ * harborトークの開始を、その部屋の最近の発言者へ通知する。
+ *
+ * 送るのは部屋の設定 notifyVoiceStart が ON のときだけ。
+ * 受け手側も notificationPrefs.voice_started で個別に切れる（二段構え）。
+ *
+ * 通知したら voiceNotifiedAt を進め、次はクールダウン後まで送らない。
+ * 全員が抜けて入り直すたびに通知するとうるさいため。
+ * 失敗してもトリガー側（参加処理）は止めない。
+ */
+export async function notifyVoiceStarted(args: {
+  topicId: string;
+  starterId: string;
+  starterName: string;
+}): Promise<void> {
+  try {
+    const now = new Date();
+    // 設定 ON かつクールダウンを過ぎている場合だけ、その場で時刻を進める。
+    // updateMany の条件に含めることで、同時に開始要求が来ても1回しか通らない。
+    const claimed = await prisma.communityTopic.updateMany({
+      where: {
+        id: args.topicId,
+        notifyVoiceStart: true,
+        OR: [
+          { voiceNotifiedAt: null },
+          { voiceNotifiedAt: { lt: new Date(now.getTime() - VOICE_NOTIFY_COOLDOWN_MS) } },
+        ],
+      },
+      data: { voiceNotifiedAt: now },
+    });
+    if (claimed.count === 0) return;
+
+    const topic = await prisma.communityTopic.findUnique({
+      where: { id: args.topicId },
+      select: { name: true },
+    });
+    if (!topic) return;
+
+    const since = new Date(now.getTime() - VOICE_ACTIVE_DAYS * 24 * 60 * 60 * 1000);
+    // 直近に発言した人。開始した本人は除く。
+    const speakers = await prisma.communityMessage.findMany({
+      where: {
+        topicId: args.topicId,
+        createdAt: { gte: since },
+        userId: { not: args.starterId },
+        hidden: false,
+        deletedAt: null,
+      },
+      distinct: ["userId"],
+      select: {
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            notificationPrefs: true,
+            email: true,
+            emailNotificationsEnabled: true,
+          },
+        },
+      },
+    });
+    const recipients = speakers
+      .map((m) => m.user)
+      .filter((u) => normalizePrefs(u.notificationPrefs).voice_started);
+    if (recipients.length === 0) return;
+
+    await prisma.notification.createMany({
+      data: recipients.map((u) => ({
+        userId: u.id,
+        type: "voice_started",
+        actorId: args.starterId,
+        actorName: args.starterName,
+        postId: args.topicId,
+        postTitle: topic.name,
+      })),
+    });
+
+    const { title, body } = notificationText({
+      type: "voice_started",
+      actorName: args.starterName,
+      postTitle: topic.name,
+      amount: null,
+      currency: null,
+    });
+    const url = notificationUrl({ type: "voice_started", postId: args.topicId });
+    await Promise.all(
+      recipients.map((u) =>
+        sendPushToUser(u.id, { title, body, url, tag: "voice_started" })
+      )
+    );
+
+    for (const u of recipients) {
+      if (u.email && u.emailNotificationsEnabled) {
+        await sendNotificationEmail(u.email, {
+          type: "voice_started",
+          actorName: args.starterName,
+          postTitle: topic.name,
+          amount: null,
+          currency: null,
+          postId: args.topicId,
+          actorId: args.starterId,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("notifyVoiceStarted error", e);
+  }
+}
+
 // 通知の遷移先 URL。
 export function notificationUrl(n: {
   type: string;
@@ -255,6 +371,8 @@ export function notificationUrl(n: {
   if (n.type === "stamp_sold") return "/stamps/manage";
   // チャット投げ銭は postId フィールドにトピックIDを入れて該当トピックへ遷移。
   if (n.type === "community_tip") return n.postId ? `/community/${n.postId}` : "/notifications";
+  // harborトーク開始も同様にトピックIDを postId へ入れ、その部屋へ遷移する。
+  if (n.type === "voice_started") return n.postId ? `/community/${n.postId}` : "/notifications";
   if (n.postId) return `/posts/${n.postId}`;
   return "/notifications";
 }
@@ -315,6 +433,12 @@ export function notificationText(n: {
       return {
         title: "チャットで投げ銭が届きました 🎉",
         body: `${who} さんから ${amt} の投げ銭（${post}）`,
+      };
+    case "voice_started":
+      // postTitle にトピック名を入れて渡す。
+      return {
+        title: "harborトークが始まりました 🎧",
+        body: `${who} さんが「${post}」でharborトークを開始しました`,
       };
     default:
       return { title: "通知", body: post };
