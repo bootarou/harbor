@@ -25,6 +25,14 @@ import { VoiceGuestNotice } from "@/components/community/voice-guest-notice";
 import { ScreenDockContext } from "@/components/community/screen-dock";
 import { UserAvatar } from "@/components/user-avatar";
 
+// 貼り付けで受け付ける画像形式。ファイル選択の accept と同じにする。
+const PASTE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
 // 最下部とみなす余白。数十pxのズレは「最下部を見ている」と扱う。
 const BOTTOM_THRESHOLD_PX = 80;
 
@@ -330,11 +338,9 @@ export function ChatRoom({
     });
   }
 
-  // 画像を選択→アップロード（長辺500pxへ縮小・圧縮）→添付候補にする。
-  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  // 画像をアップロード（長辺500pxへ縮小・圧縮）→添付候補にする。
+  // ファイル選択と貼り付けの両方から使う。
+  async function uploadImage(file: File) {
     setError(null);
     setImgUploading(true);
     try {
@@ -354,6 +360,32 @@ export function ChatRoom({
     } finally {
       setImgUploading(false);
     }
+  }
+
+  function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void uploadImage(file);
+  }
+
+  // 入力欄への貼り付け。クリップボードに画像があれば添付する
+  // （スクリーンショットやブラウザの「画像をコピー」）。
+  //
+  // 文字も一緒に入っている場合は文字の貼り付けを優先する。Excel や Word は
+  // セルや文章をコピーすると画像版も同時に載せるため、画像を優先すると
+  // 文字を貼りたかったのに画像が添付されてしまう。
+  function onPasteImage(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const data = e.clipboardData;
+    if (data.getData("text/plain").length > 0) return;
+    const item = Array.from(data.items).find(
+      (it) => it.kind === "file" && PASTE_IMAGE_TYPES.has(it.type)
+    );
+    const file = item?.getAsFile();
+    if (!file) return;
+    // 既定の貼り付け（ファイル名などの文字列が入る）を止める。
+    e.preventDefault();
+    if (imgUploading) return;
+    void uploadImage(file);
   }
 
   // 投げ銭成功時に該当メッセージの合計を更新（カウントアップ・アニメで反映）。
@@ -684,6 +716,7 @@ export function ChatRoom({
               <textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
+                onPaste={onPasteImage}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
@@ -692,7 +725,7 @@ export function ChatRoom({
                 }}
                 rows={1}
                 maxLength={2000}
-                placeholder="メッセージを入力（⌘/Ctrl+Enterで送信）"
+                placeholder="メッセージを入力（⌘/Ctrl+Enterで送信・画像は貼り付けも可）"
                 className="max-h-32 min-h-[2.25rem] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
               />
               <button
