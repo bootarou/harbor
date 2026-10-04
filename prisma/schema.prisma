@@ -465,6 +465,8 @@ model CommunityTopic {
   notifyVoiceStart Boolean   @default(false)
   // 直近の開始通知を送った日時。連投で通知が溢れないよう間隔を空ける判定に使う
   voiceNotifiedAt  DateTime?
+  // 直近の入室通知を送った日時。同上
+  entryNotifiedAt  DateTime?
   lastPostedAt DateTime? // 最終投稿日時（自動アーカイブ判定・一覧の並び順に使用）
   createdAt    DateTime  @default(now())
 

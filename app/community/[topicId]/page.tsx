@@ -14,6 +14,7 @@ import {
 import { absoluteUrl } from "@/lib/site";
 import { ChatRoom } from "@/components/community/chat-room";
 import { DeleteTopicButton } from "@/components/community/delete-topic-button";
+import { EntryNotice } from "@/components/community/entry-notice";
 import { ShareButtons } from "@/components/share-buttons";
 
 export async function generateMetadata({
@@ -175,6 +176,9 @@ export default async function TopicPage({
           このトピックはアーカイブされています（投稿すると自動的に再開します）。
         </p>
       )}
+
+      {/* 入室を知らせるかどうかは、部屋の作成者が入室のたびに選ぶ。 */}
+      {isTopicAuthor && <EntryNotice topicId={topic.id} />}
 
       </div>
 

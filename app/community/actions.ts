@@ -9,6 +9,7 @@ import { sendEmail } from "@/lib/email";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { communityMessageSchema, communityTopicSchema } from "@/lib/validations";
 import { shapeMessage, type CommunityMessageView } from "@/lib/community";
+import { notifyRoomEntered } from "@/lib/notifications";
 
 export type TopicFormState = {
   error?: string;
@@ -76,6 +77,48 @@ export async function saveTopic(
     console.error("saveTopic error", e);
     return { error: "トピックの保存に失敗しました" };
   }
+}
+
+/**
+ * 部屋の作成者が「通知して入室」を選んだときに呼ぶ。
+ * 直近30日以内に発言した人へ入室を知らせる。
+ *
+ * 強制では流さず、入室のたびに作成者が選ぶ。作成者以外は何もしない。
+ * 連投を防ぐためのクールダウンは notifyRoomEntered 側で取る。
+ */
+export async function notifyTopicEntry(
+  topicId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "ログインしてください。" };
+  const userId = session.user.id;
+
+  const topic = await prisma.communityTopic.findUnique({
+    where: { id: topicId },
+    select: { authorId: true },
+  });
+  if (!topic) return { ok: false, error: "トピックが見つかりません" };
+  // 入室を知らせられるのは部屋の作成者だけ。
+  if (topic.authorId !== userId) {
+    return { ok: false, error: "この部屋の作成者のみ通知できます" };
+  }
+
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { displayName: true },
+  });
+  const sent = await notifyRoomEntered({
+    topicId,
+    actorId: userId,
+    actorName: me?.displayName ?? "作成者",
+  });
+  if (!sent) {
+    return {
+      ok: false,
+      error: "先ほど通知したばかりです。しばらくしてからお試しください。",
+    };
+  }
+  return { ok: true };
 }
 
 // トピック削除（作成者のみ・Cascade でメッセージも削除）。

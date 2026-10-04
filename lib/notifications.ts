@@ -18,7 +18,8 @@ export type NotificationType =
   | "stamp_sold"
   | "stamp_placed"
   | "community_tip"
-  | "voice_started";
+  | "voice_started"
+  | "room_entered";
 
 // 種別の定義（ラベルと既定 ON/OFF）。設定画面・正規化に使う。
 export const NOTIFICATION_TYPES: {
@@ -39,6 +40,7 @@ export const NOTIFICATION_TYPES: {
   { key: "stamp_placed", label: "自分の記事にスタンプが貼られた", default: true },
   { key: "community_tip", label: "チャットで投げ銭を受け取った", default: true },
   { key: "voice_started", label: "参加中の部屋でharborトークが始まった", default: true },
+  { key: "room_entered", label: "参加中の部屋に作成者が来た", default: true },
 ];
 
 export type NotificationPrefs = Record<NotificationType, boolean>;
@@ -243,19 +245,130 @@ export async function notifyFollowersNewPost(args: {
   }
 }
 
-/** 開始通知を送る対象とする「最近の発言者」の期間。 */
-const VOICE_ACTIVE_DAYS = 30;
-/** 同じ部屋で開始通知を繰り返さない間隔。入退室の繰り返しで通知が溢れるのを防ぐ。 */
-const VOICE_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000;
+/** 部屋への通知を送る対象とする「最近の発言者」の期間。 */
+const TOPIC_ACTIVE_DAYS = 30;
+/** 同じ部屋で通知を繰り返さない間隔。入退室の繰り返しで通知が溢れるのを防ぐ。 */
+const TOPIC_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000;
+
+/**
+ * 部屋の「最近の発言者」のうち、その種別の通知を受け取る設定の人を返す。
+ * 行為者本人は除く。
+ */
+async function recentTopicSpeakers(
+  topicId: string,
+  excludeUserId: string,
+  type: NotificationType
+) {
+  const since = new Date(Date.now() - TOPIC_ACTIVE_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await prisma.communityMessage.findMany({
+    where: {
+      topicId,
+      createdAt: { gte: since },
+      userId: { not: excludeUserId },
+      hidden: false,
+      deletedAt: null,
+    },
+    distinct: ["userId"],
+    select: {
+      userId: true,
+      user: {
+        select: {
+          id: true,
+          notificationPrefs: true,
+          email: true,
+          emailNotificationsEnabled: true,
+        },
+      },
+    },
+  });
+  return rows
+    .map((m) => m.user)
+    .filter((u) => normalizePrefs(u.notificationPrefs)[type]);
+}
+
+/**
+ * 部屋の最近の発言者へ同じ通知をまとめて配る
+ * （サイト内通知・ブラウザプッシュ・メール）。
+ */
+async function deliverToTopicSpeakers(args: {
+  type: NotificationType;
+  topicId: string;
+  topicName: string;
+  actorId: string;
+  actorName: string;
+  recipients: Awaited<ReturnType<typeof recentTopicSpeakers>>;
+}): Promise<void> {
+  const { type, topicId, topicName, actorId, actorName, recipients } = args;
+  if (recipients.length === 0) return;
+
+  await prisma.notification.createMany({
+    data: recipients.map((u) => ({
+      userId: u.id,
+      type,
+      actorId,
+      actorName,
+      // community_tip と同じく postId にトピックIDを入れ、その部屋へ遷移させる。
+      postId: topicId,
+      postTitle: topicName,
+    })),
+  });
+
+  const { title, body } = notificationText({
+    type,
+    actorName,
+    postTitle: topicName,
+    amount: null,
+    currency: null,
+  });
+  const url = notificationUrl({ type, postId: topicId });
+  await Promise.all(
+    recipients.map((u) => sendPushToUser(u.id, { title, body, url, tag: type }))
+  );
+
+  for (const u of recipients) {
+    if (u.email && u.emailNotificationsEnabled) {
+      await sendNotificationEmail(u.email, {
+        type,
+        actorName,
+        postTitle: topicName,
+        amount: null,
+        currency: null,
+        postId: topicId,
+        actorId,
+      });
+    }
+  }
+}
+
+/**
+ * 部屋ごとのクールダウンを取る。
+ * 条件を updateMany の where に入れて時刻の更新と判定を1クエリで行うため、
+ * ほぼ同時に呼ばれても通るのは1回だけになる。
+ * @returns 送ってよければ true
+ */
+async function claimTopicNotify(
+  topicId: string,
+  field: "voiceNotifiedAt" | "entryNotifiedAt",
+  extraWhere: Prisma.CommunityTopicWhereInput = {}
+): Promise<boolean> {
+  const now = new Date();
+  const before = new Date(now.getTime() - TOPIC_NOTIFY_COOLDOWN_MS);
+  const claimed = await prisma.communityTopic.updateMany({
+    where: {
+      id: topicId,
+      ...extraWhere,
+      OR: [{ [field]: null }, { [field]: { lt: before } }],
+    },
+    data: { [field]: now },
+  });
+  return claimed.count > 0;
+}
 
 /**
  * harborトークの開始を、その部屋の最近の発言者へ通知する。
  *
  * 送るのは部屋の設定 notifyVoiceStart が ON のときだけ。
  * 受け手側も notificationPrefs.voice_started で個別に切れる（二段構え）。
- *
- * 通知したら voiceNotifiedAt を進め、次はクールダウン後まで送らない。
- * 全員が抜けて入り直すたびに通知するとうるさいため。
  * 失敗してもトリガー側（参加処理）は止めない。
  */
 export async function notifyVoiceStarted(args: {
@@ -264,21 +377,10 @@ export async function notifyVoiceStarted(args: {
   starterName: string;
 }): Promise<void> {
   try {
-    const now = new Date();
-    // 設定 ON かつクールダウンを過ぎている場合だけ、その場で時刻を進める。
-    // updateMany の条件に含めることで、同時に開始要求が来ても1回しか通らない。
-    const claimed = await prisma.communityTopic.updateMany({
-      where: {
-        id: args.topicId,
-        notifyVoiceStart: true,
-        OR: [
-          { voiceNotifiedAt: null },
-          { voiceNotifiedAt: { lt: new Date(now.getTime() - VOICE_NOTIFY_COOLDOWN_MS) } },
-        ],
-      },
-      data: { voiceNotifiedAt: now },
+    const ok = await claimTopicNotify(args.topicId, "voiceNotifiedAt", {
+      notifyVoiceStart: true,
     });
-    if (claimed.count === 0) return;
+    if (!ok) return;
 
     const topic = await prisma.communityTopic.findUnique({
       where: { id: args.topicId },
@@ -286,74 +388,63 @@ export async function notifyVoiceStarted(args: {
     });
     if (!topic) return;
 
-    const since = new Date(now.getTime() - VOICE_ACTIVE_DAYS * 24 * 60 * 60 * 1000);
-    // 直近に発言した人。開始した本人は除く。
-    const speakers = await prisma.communityMessage.findMany({
-      where: {
-        topicId: args.topicId,
-        createdAt: { gte: since },
-        userId: { not: args.starterId },
-        hidden: false,
-        deletedAt: null,
-      },
-      distinct: ["userId"],
-      select: {
-        userId: true,
-        user: {
-          select: {
-            id: true,
-            notificationPrefs: true,
-            email: true,
-            emailNotificationsEnabled: true,
-          },
-        },
-      },
-    });
-    const recipients = speakers
-      .map((m) => m.user)
-      .filter((u) => normalizePrefs(u.notificationPrefs).voice_started);
-    if (recipients.length === 0) return;
-
-    await prisma.notification.createMany({
-      data: recipients.map((u) => ({
-        userId: u.id,
-        type: "voice_started",
-        actorId: args.starterId,
-        actorName: args.starterName,
-        postId: args.topicId,
-        postTitle: topic.name,
-      })),
-    });
-
-    const { title, body } = notificationText({
+    await deliverToTopicSpeakers({
       type: "voice_started",
+      topicId: args.topicId,
+      topicName: topic.name,
+      actorId: args.starterId,
       actorName: args.starterName,
-      postTitle: topic.name,
-      amount: null,
-      currency: null,
+      recipients: await recentTopicSpeakers(
+        args.topicId,
+        args.starterId,
+        "voice_started"
+      ),
     });
-    const url = notificationUrl({ type: "voice_started", postId: args.topicId });
-    await Promise.all(
-      recipients.map((u) =>
-        sendPushToUser(u.id, { title, body, url, tag: "voice_started" })
-      )
-    );
-
-    for (const u of recipients) {
-      if (u.email && u.emailNotificationsEnabled) {
-        await sendNotificationEmail(u.email, {
-          type: "voice_started",
-          actorName: args.starterName,
-          postTitle: topic.name,
-          amount: null,
-          currency: null,
-          postId: args.topicId,
-          actorId: args.starterId,
-        });
-      }
-    }
   } catch (e) {
     console.error("notifyVoiceStarted error", e);
+  }
+}
+
+/**
+ * 部屋の作成者の入室を、その部屋の最近の発言者へ通知する。
+ *
+ * harborトークと違い、送るかどうかは入室のたびに作成者が選ぶ
+ * （部屋の設定では持たない）。呼び出し側で作成者であることを確認すること。
+ * 受け手側は notificationPrefs.room_entered で切れる。
+ *
+ * @returns 実際に送ったか（クールダウン中なら false）
+ */
+export async function notifyRoomEntered(args: {
+  topicId: string;
+  actorId: string;
+  actorName: string;
+}): Promise<boolean> {
+  try {
+    const ok = await claimTopicNotify(args.topicId, "entryNotifiedAt");
+    if (!ok) return false;
+
+    const topic = await prisma.communityTopic.findUnique({
+      where: { id: args.topicId },
+      select: { name: true },
+    });
+    if (!topic) return false;
+
+    await deliverToTopicSpeakers({
+      type: "room_entered",
+      topicId: args.topicId,
+      topicName: topic.name,
+      actorId: args.actorId,
+      actorName: args.actorName,
+      recipients: await recentTopicSpeakers(
+        args.topicId,
+        args.actorId,
+        "room_entered"
+      ),
+    });
+    return true;
+  } catch (e) {
+    console.error("notifyRoomEntered error", e);
+    return false;
   }
 }
 
@@ -373,6 +464,7 @@ export function notificationUrl(n: {
   if (n.type === "community_tip") return n.postId ? `/community/${n.postId}` : "/notifications";
   // harborトーク開始も同様にトピックIDを postId へ入れ、その部屋へ遷移する。
   if (n.type === "voice_started") return n.postId ? `/community/${n.postId}` : "/notifications";
+  if (n.type === "room_entered") return n.postId ? `/community/${n.postId}` : "/notifications";
   if (n.postId) return `/posts/${n.postId}`;
   return "/notifications";
 }
@@ -439,6 +531,12 @@ export function notificationText(n: {
       return {
         title: "harborトークが始まりました 🎧",
         body: `${who} さんが「${post}」でharborトークを開始しました`,
+      };
+    case "room_entered":
+      // postTitle にトピック名を入れて渡す。
+      return {
+        title: "部屋に作成者が来ました 👋",
+        body: `${who} さんが「${post}」に入室しました`,
       };
     default:
       return { title: "通知", body: post };
