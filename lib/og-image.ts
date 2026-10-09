@@ -12,11 +12,8 @@ const EXT_BY_IMAGE_MIME: Record<string, string> = {
 // 自前ストレージ上の URL か（再ホスト不要の判定）。
 // - 相対 /uploads/ はローカルフォールバック保存先
 // - S3 公開URLの接頭辞に一致するものも自前
-export function isOwnImageUrl(u: string): boolean {
-  if (u.startsWith("/uploads/")) return true;
-  const base = (process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "").replace(/\/$/, "");
-  return base !== "" && u.startsWith(base);
-}
+// 判定は lib/own-image.ts に一本化（前方一致の判定は外部ホストを通してしまうため）。
+export { isOwnImageUrl } from "@/lib/own-image";
 
 // 外部の og:image を自前ストレージへ再ホストし、保存後の公開URLを返す。
 // 取得・保存いずれかに失敗したら null（呼び出し側は元の外部URLにフォールバック）。

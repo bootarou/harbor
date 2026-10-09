@@ -380,7 +380,10 @@ export async function autosaveDraft(
   const postId = str("postId");
   const title = str("title").slice(0, 200);
   const safeHtml = sanitizePostHtml(str("contentHTML"));
-  const coverImage = str("coverImage").trim() || null;
+  // 自動保存は zod を通らないため、ここで自サイトの画像に限る
+  // （外部URLのまま公開されるとトラッキングに使われる。lib/own-image.ts 参照）。
+  const coverRaw = str("coverImage").trim();
+  const coverImage = coverRaw && isOwnImageUrl(coverRaw) ? coverRaw : null;
   const tags = parseTags(formData.get("tags"));
 
   // 販売設定は下書き段階では厳密検証せず、入力値だけ保持する（QAは常に無料）。

@@ -14,6 +14,7 @@ import { parseTransferredWallet } from "@/lib/wallet/portable";
 import { isCameraScanSupported } from "@/lib/wallet/capabilities";
 import { useQrScanner } from "@/components/wallet/use-qr-scanner";
 import { shortAddress } from "@/lib/did";
+import { safeCallbackUrl } from "@/lib/safe-callback";
 
 type Step = "idle" | "scanning" | "paste" | "passphrase";
 
@@ -24,7 +25,8 @@ type Step = "idle" | "scanning" | "paste" | "passphrase";
 export function QrLogin() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  // 外部サイトへ飛ばされないよう、同一オリジンのパスだけを通す。
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const [supported, setSupported] = useState(false);
   const [step, setStep] = useState<Step>("idle");

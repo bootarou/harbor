@@ -18,6 +18,7 @@ import { parseTransferredWallet } from "@/lib/wallet/portable";
 import { isNfcSupported } from "@/lib/wallet/capabilities";
 import { beginPurgeSession, endPurgeSession } from "@/lib/wallet/purge-session";
 import { shortAddress } from "@/lib/did";
+import { safeCallbackUrl } from "@/lib/safe-callback";
 
 type Step = "idle" | "scanning" | "passphrase";
 
@@ -28,7 +29,8 @@ type Step = "idle" | "scanning" | "passphrase";
 export function NfcLogin() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  // 外部サイトへ飛ばされないよう、同一オリジンのパスだけを通す。
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const [supported, setSupported] = useState(false);
   const [step, setStep] = useState<Step>("idle");

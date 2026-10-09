@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isOwnImageUrl } from "@/lib/own-image";
 
 // X(旧Twitter) のハンドル: 先頭 @ は任意、英数字とアンダースコア、1〜15文字。
 const xHandleRegex = /^[A-Za-z0-9_]{1,15}$/;
@@ -69,11 +70,14 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 // 投げ銭・購入で許可する通貨（モザイク）。当面 XYM のみ。
 export const ALLOWED_CURRENCIES = ["XYM"] as const;
 
+// 画像URLは自サイトで保存したものに限る（チャット画像・トピックアイコン・
+// 記事カバー・スタンプ）。外部URLを許すとトラッキングや差し替えに使われる。
+// 理由の詳細は lib/own-image.ts を参照。
 const imageUrl = z
   .string()
   .trim()
   .max(2048)
-  .refine((v) => v === "" || v.startsWith("/uploads/") || /^https?:\/\//.test(v), {
+  .refine((v) => v === "" || isOwnImageUrl(v), {
     message: "画像URLが不正です",
   });
 

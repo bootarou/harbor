@@ -13,6 +13,32 @@ import sharp from "sharp";
 
 type ImageFormat = "png" | "jpg" | "webp" | "gif";
 
+/**
+ * 先頭バイトが申告された形式のものかを確かめる。
+ *
+ * sharp は MIME 型ではなく中身で形式を判定するため、image/png と偽った
+ * SVG や HEIF も解析してしまう（librsvg / libheif に届く）。これらの
+ * デコーダには既知の脆弱性があるので、sharp に渡す前に実際の形式を
+ * 確かめ、許可した4形式以外は解析させない。
+ */
+function hasImageMagic(buf: Buffer, format: ImageFormat): boolean {
+  const ascii = (start: number, end: number) =>
+    buf.subarray(start, end).toString("latin1");
+  switch (format) {
+    case "png":
+      return (
+        buf.length >= 8 &&
+        buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      );
+    case "jpg":
+      return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    case "gif":
+      return buf.length >= 6 && (ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a");
+    case "webp":
+      return buf.length >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
+  }
+}
+
 const ALLOWED_MIME = new Map<string, ImageFormat>([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
@@ -159,6 +185,9 @@ export async function saveImage(
   }
 
   const input = Buffer.from(await file.arrayBuffer());
+  if (!hasImageMagic(input, format)) {
+    throw new ImageValidationError("画像ファイルの中身が形式と一致しません");
+  }
 
   // 長辺 maxDimension 以内へリサイズし、形式ごとに再エンコードして圧縮する。
   // カバー画像だけは OGP 用に JPEG へ揃えて軽くする（processCoverImage 参照）。
@@ -268,6 +297,9 @@ export async function saveStampImage(file: File): Promise<string> {
   }
 
   const input = Buffer.from(await file.arrayBuffer());
+  if (!hasImageMagic(input, format)) {
+    throw new ImageValidationError("画像ファイルの中身が形式と一致しません");
+  }
 
   // 長辺 500px 以内へ縮小（拡大しない・縦横比保持）し、形式ごとに再エンコード圧縮。
   // GIF/WebP はアニメーションを壊さないよう全フレームを読み込む。
